@@ -1,0 +1,745 @@
+// SPDX-License-Identifier: UNLICENSED
+pragma solidity ^0.8.13;
+
+import {Test, console} from "forge-std/Test.sol";
+import {FixedStakingRewards} from "../src/FixedStakingRewards.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {ERC20, IERC20Errors} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+
+// Import custom errors
+import {
+    CannotStakeZero,
+    NotEnoughRewards,
+    RewardsNotAvailableYet,
+    CannotWithdrawZero,
+    CannotWithdrawStakingToken,
+    PreviousRewardsPeriodNotComplete,
+    ContractIsPaused
+} from "../src/FixedStakingRewards.sol";
+
+contract MockERC20 is ERC20 {
+    constructor(
+        string memory name,
+        string memory symbol,
+        uint256 initialSupply
+    ) ERC20(name, symbol) {
+        _mint(msg.sender, initialSupply);
+    }
+    
+    function mint(address to, uint256 amount) public {
+        _mint(to, amount);
+    }
+    
+    function burn(address from, uint256 amount) public {
+        _burn(from, amount);
+    }
+}
+
+contract FixedStakingRewardsTest is Test {
+    FixedStakingRewards public stakingRewards;
+    MockERC20 public rewardsToken;
+    MockERC20 public stakingToken;
+    MockERC20 public otherToken;
+    
+    address public owner;
+    address public user1;
+    address public user2;
+    
+    uint256 public constant INITIAL_REWARDS_SUPPLY = 10000e18;
+    uint256 public constant INITIAL_STAKING_SUPPLY = 10000e18;
+    uint256 public constant REWARDS_DURATION = 86400 * 14; // 14 days
+    
+    event RewardAdded(uint256 reward);
+    event Staked(address indexed user, uint256 amount);
+    event Withdrawn(address indexed user, uint256 amount);
+    event RewardPaid(address indexed user, uint256 reward);
+    event RewardsDurationUpdated(uint256 newDuration);
+    event Recovered(address token, uint256 amount);
+
+    function setUp() public {
+        owner = address(this);
+        user1 = makeAddr("user1");
+        user2 = makeAddr("user2");
+        
+        // Deploy tokens
+        rewardsToken = new MockERC20("RewardsToken", "RT", INITIAL_REWARDS_SUPPLY);
+        stakingToken = new MockERC20("StakingToken", "ST", INITIAL_STAKING_SUPPLY);
+        otherToken = new MockERC20("OtherToken", "OT", 1000e18);
+        
+        // Deploy staking contract
+        stakingRewards = new FixedStakingRewards(
+            owner,
+            address(rewardsToken),
+            address(stakingToken)
+        );
+
+        // setup token allowances so we dont have to do it later
+        stakingToken.approve(address(stakingRewards), type(uint256).max);
+        rewardsToken.approve(address(stakingRewards), type(uint256).max);
+        
+        // Setup initial token distributions
+        stakingToken.transfer(user1, 1000e18);
+        stakingToken.transfer(user2, 1000e18);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                             CONSTRUCTOR TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_Constructor_InitializesCorrectly() public view {
+        assertEq(address(stakingRewards.rewardsToken()), address(rewardsToken));
+        assertEq(address(stakingRewards.stakingToken()), address(stakingToken));
+        assertEq(stakingRewards.owner(), owner);
+        assertEq(stakingRewards.rewardRate(), 0);
+        assertEq(stakingRewards.periodFinish(), 0);
+        assertEq(stakingRewards.rewardsDuration(), REWARDS_DURATION);
+        assertEq(stakingRewards.name(), "FixedStakingRewards");
+        assertEq(stakingRewards.symbol(), "FSR");
+        
+        // Check rewardsAvailableDate is set to 1 year from deployment
+        assertEq(stakingRewards.rewardsAvailableDate(), block.timestamp + 86400 * 365);
+    }
+
+    function test_Constructor_WithDifferentOwner() public {
+        address newOwner = makeAddr("newOwner");
+        FixedStakingRewards newStaking = new FixedStakingRewards(
+            newOwner,
+            address(rewardsToken),
+            address(stakingToken)
+        );
+        
+        assertEq(newStaking.owner(), newOwner);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                             VIEW FUNCTION TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_LastTimeRewardApplicable_BeforePeriodFinish() public {
+        // Set up a period finish in the future
+        stakingRewards.setRewardYieldForYear(1e18);
+        stakingRewards.supplyRewards(1000e18);
+        
+        uint256 result = stakingRewards.lastTimeRewardApplicable();
+        assertEq(result, block.timestamp);
+    }
+
+    function test_LastTimeRewardApplicable_AfterPeriodFinish() public {
+        // Set up a period finish in the past
+        stakingRewards.setRewardYieldForYear(1e18);
+        stakingRewards.supplyRewards(1000e18);
+        
+        // Move time forward past period finish
+        skip(REWARDS_DURATION + 1);
+        
+        uint256 result = stakingRewards.lastTimeRewardApplicable();
+        assertEq(result, stakingRewards.periodFinish());
+    }
+
+    function test_RewardPerToken_WithZeroTotalSupply() public {
+        uint256 result = stakingRewards.rewardPerToken();
+        assertEq(result, 0);
+    }
+
+    function test_RewardPerToken_WithNonZeroTotalSupply() public {
+        // Set up rewards
+        stakingRewards.setRewardYieldForYear(1e18);
+        stakingRewards.supplyRewards(1000e18);
+        
+        // User stakes
+        vm.startPrank(user1);
+        stakingToken.approve(address(stakingRewards), 100e18);
+        stakingRewards.stake(100e18);
+        vm.stopPrank();
+        
+        // Move time forward
+        skip(3600); // 1 hour
+        
+        uint256 result = stakingRewards.rewardPerToken();
+        uint256 expected = 3600 * (1e18 / uint256(365 days)) * 1e18 / 100e18; // timeElapsed * rewardRate * 1e18 / totalSupply
+        assertEq(result, expected);
+    }
+
+    function test_Earned_WithoutStaking() public {
+        uint256 result = stakingRewards.earned(user1);
+        assertEq(result, 0);
+    }
+
+    function test_Earned_WithStaking() public {
+        // Set up rewards
+        stakingRewards.setRewardYieldForYear(1e18);
+        stakingRewards.supplyRewards(1000e18);
+        
+        // User stakes
+        vm.startPrank(user1);
+        stakingToken.approve(address(stakingRewards), 100e18);
+        stakingRewards.stake(100e18);
+        vm.stopPrank();
+        
+        // Move time forward
+        skip(3600); // 1 hour
+        
+        uint256 result = stakingRewards.earned(user1);
+        uint256 expected = 3600 * (1e18 / uint256(365 days)); // 1 hour * 1 token per second
+        assertEq(result, expected);
+    }
+
+    function test_GetRewardForDuration_ReturnsCorrectValue() public {
+        stakingRewards.setRewardYieldForYear(1e18);
+        uint256 result = stakingRewards.getRewardForDuration();
+        uint256 expected = (1e18 / uint256(365 days)) * (86400 * 14); // Should use rewardsDuration instead
+        assertEq(result, expected);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                             STAKING TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_Stake_Success() public {
+        uint256 amount = 100e18;
+        
+        // Set up rewards so staking is allowed
+        stakingRewards.setRewardYieldForYear(1e18);
+        stakingRewards.supplyRewards(1000e18);
+        
+        vm.startPrank(user1);
+        stakingToken.approve(address(stakingRewards), amount);
+        
+        vm.expectEmit(true, true, false, true);
+        emit Staked(user1, amount);
+        
+        stakingRewards.stake(amount);
+        
+        assertEq(stakingRewards.balanceOf(user1), amount);
+        assertEq(stakingRewards.totalSupply(), amount);
+        assertEq(stakingToken.balanceOf(address(stakingRewards)), amount);
+        vm.stopPrank();
+    }
+
+    function test_Stake_RevertWhen_AmountIsZero() public {
+        vm.startPrank(user1);
+        stakingToken.approve(address(stakingRewards), 0);
+        
+        vm.expectRevert(abi.encodeWithSelector(CannotStakeZero.selector));
+        stakingRewards.stake(0);
+        vm.stopPrank();
+    }
+
+    function test_Stake_RevertWhen_ContractIsPaused() public {
+        // BUG: Contract inherits from ERC20Pausable but doesn't expose pause/unpause functions
+        // This test demonstrates the contract has pausable functionality but no way to pause it
+        // Skip this test since pause function is not exposed
+        vm.skip(true);
+    }
+
+    function test_Stake_RevertWhen_InsufficientRewards() public {
+        stakingRewards.setRewardYieldForYear(1e18);
+        stakingRewards.supplyRewards(1e18);
+        
+        vm.startPrank(user1);
+        stakingToken.approve(address(stakingRewards), 100e18);
+        
+        uint256 available = 1e18;
+        // rounding makes it hard so just put the value directly
+        uint256 required = 3835616438263680000;
+        
+        vm.expectRevert(abi.encodeWithSelector(NotEnoughRewards.selector, available, required));
+        stakingRewards.stake(100e18);
+        vm.stopPrank();
+    }
+
+    function test_Stake_UpdatesRewards() public {
+        // Set up rewards
+        stakingRewards.setRewardYieldForYear(1e18);
+        stakingRewards.supplyRewards(1000e18);
+        
+        // First stake
+        vm.startPrank(user1);
+        stakingToken.approve(address(stakingRewards), 100e18);
+        stakingRewards.stake(100e18);
+        vm.stopPrank();
+        
+        // Move time forward
+        skip(3600);
+        
+        // Second stake should update rewards
+        vm.startPrank(user1);
+        stakingToken.approve(address(stakingRewards), 100e18);
+        stakingRewards.stake(100e18);
+        
+        uint256 rewards = stakingRewards.rewards(user1);
+        assertGt(rewards, 0);
+        vm.stopPrank();
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                             WITHDRAWAL TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_Withdraw_RevertWhen_BeforeRewardsAvailableDate() public {
+        // Set up staking first
+        stakingRewards.setRewardYieldForYear(1e18);
+        stakingRewards.supplyRewards(2000e18);
+        
+        vm.startPrank(user1);
+        stakingToken.approve(address(stakingRewards), 100e18);
+        stakingRewards.stake(100e18);
+        
+        vm.expectRevert(abi.encodeWithSelector(RewardsNotAvailableYet.selector, block.timestamp, stakingRewards.rewardsAvailableDate()));
+        stakingRewards.withdraw(50e18);
+        vm.stopPrank();
+    }
+
+    function test_Withdraw_RevertWhen_AmountIsZero() public {
+        // Release rewards first
+        stakingRewards.releaseRewards();
+        
+        vm.startPrank(user1);
+        vm.expectRevert(abi.encodeWithSelector(CannotWithdrawZero.selector));
+        stakingRewards.withdraw(0);
+        vm.stopPrank();
+    }
+
+    function test_Withdraw_Success() public {
+        // Set up staking first
+        stakingRewards.setRewardYieldForYear(1e18);
+        stakingRewards.supplyRewards(2000e18);
+        
+        vm.startPrank(user1);
+        stakingToken.approve(address(stakingRewards), 100e18);
+        stakingRewards.stake(100e18);
+        vm.stopPrank();
+        
+        // Release rewards
+        stakingRewards.releaseRewards();
+        
+        uint256 withdrawAmount = 50e18;
+        uint256 initialBalance = stakingToken.balanceOf(user1);
+        
+        vm.startPrank(user1);
+        vm.expectEmit(true, true, false, true);
+        emit Withdrawn(user1, withdrawAmount);
+        
+        stakingRewards.withdraw(withdrawAmount);
+        
+        assertEq(stakingRewards.balanceOf(user1), 50e18);
+        assertEq(stakingRewards.totalSupply(), 50e18);
+        assertEq(stakingToken.balanceOf(user1), initialBalance + withdrawAmount);
+        vm.stopPrank();
+    }
+
+    function test_Withdraw_RevertWhen_InsufficientBalance() public {
+        // Set up staking first
+        stakingRewards.setRewardYieldForYear(1e18);
+        stakingRewards.supplyRewards(2000e18);
+        
+        vm.startPrank(user1);
+        stakingToken.approve(address(stakingRewards), 100e18);
+        stakingRewards.stake(100e18);
+        vm.stopPrank();
+        
+        // Release rewards
+        stakingRewards.releaseRewards();
+        
+        vm.startPrank(user1);
+        vm.expectRevert(abi.encodeWithSelector(IERC20Errors.ERC20InsufficientBalance.selector, user1, 100e18, 200e18));
+        stakingRewards.withdraw(200e18);
+        vm.stopPrank();
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                             REWARD TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_GetReward_RevertWhen_BeforeRewardsAvailableDate() public {
+        vm.startPrank(user1);
+        vm.expectRevert(abi.encodeWithSelector(RewardsNotAvailableYet.selector, block.timestamp, stakingRewards.rewardsAvailableDate()));
+        stakingRewards.getReward();
+        vm.stopPrank();
+    }
+
+    function test_GetReward_WithNoRewards() public {
+        // Release rewards
+        stakingRewards.releaseRewards();
+        
+        vm.startPrank(user1);
+        stakingRewards.getReward(); // Should not revert, just do nothing
+        vm.stopPrank();
+    }
+
+    function test_GetReward_Success() public {
+        // Set up staking and rewards
+        stakingRewards.setRewardYieldForYear(1e18);
+        stakingRewards.supplyRewards(1000e18);
+        
+        vm.startPrank(user1);
+        stakingToken.approve(address(stakingRewards), 100e18);
+        stakingRewards.stake(100e18);
+        vm.stopPrank();
+        
+        // Move time forward to accumulate rewards
+        skip(3600);
+        
+        // Release rewards
+        stakingRewards.releaseRewards();
+        
+        uint256 expectedReward = stakingRewards.earned(user1);
+        uint256 initialBalance = rewardsToken.balanceOf(user1);
+        
+        vm.startPrank(user1);
+        vm.expectEmit(true, true, false, true);
+        emit RewardPaid(user1, expectedReward);
+        
+        stakingRewards.getReward();
+        
+        assertEq(stakingRewards.rewards(user1), 0);
+        assertEq(rewardsToken.balanceOf(user1), initialBalance + expectedReward);
+        vm.stopPrank();
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                             EXIT TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_Exit_Success() public {
+        // Set up staking and rewards
+        stakingRewards.setRewardYieldForYear(1e18);
+        stakingRewards.supplyRewards(1000e18);
+        
+        vm.startPrank(user1);
+        stakingToken.approve(address(stakingRewards), 100e18);
+        stakingRewards.stake(100e18);
+        vm.stopPrank();
+        
+        // Move time forward to accumulate rewards
+        skip(3600);
+        
+        // Release rewards
+        stakingRewards.releaseRewards();
+        
+        uint256 expectedReward = stakingRewards.earned(user1);
+        uint256 stakedAmount = stakingRewards.balanceOf(user1);
+        uint256 initialStakingBalance = stakingToken.balanceOf(user1);
+        uint256 initialRewardsBalance = rewardsToken.balanceOf(user1);
+        
+        vm.startPrank(user1);
+        stakingRewards.exit();
+        
+        assertEq(stakingRewards.balanceOf(user1), 0);
+        assertEq(stakingRewards.rewards(user1), 0);
+        assertEq(stakingToken.balanceOf(user1), initialStakingBalance + stakedAmount);
+        assertEq(rewardsToken.balanceOf(user1), initialRewardsBalance + expectedReward);
+        vm.stopPrank();
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                             OWNER FUNCTION TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_ReleaseRewards_Success() public {
+        uint256 oldDate = stakingRewards.rewardsAvailableDate();
+        
+        stakingRewards.releaseRewards();
+        
+        assertEq(stakingRewards.rewardsAvailableDate(), block.timestamp);
+        assertLt(stakingRewards.rewardsAvailableDate(), oldDate);
+    }
+
+    function test_ReleaseRewards_RevertWhen_NotOwner() public {
+        vm.startPrank(user1);
+        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", user1));
+        stakingRewards.releaseRewards();
+        vm.stopPrank();
+    }
+
+    function test_SetRewardRate_Success() public {
+        uint256 newRate = 5e18;
+        
+        stakingRewards.setRewardYieldForYear(newRate);
+        
+        assertEq(stakingRewards.rewardRate(), newRate / 365 days);
+    }
+
+    function test_SetRewardRate_RevertWhen_NotOwner() public {
+        vm.startPrank(user1);
+        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", user1));
+        stakingRewards.setRewardYieldForYear(5e18);
+        vm.stopPrank();
+    }
+
+    function test_SupplyRewards_Success() public {
+        // BUG: This function doesn't use the reward parameter
+        stakingRewards.setRewardYieldForYear(1e18);
+        
+        vm.expectEmit(true, false, false, true);
+        emit RewardAdded(1000e18);
+        
+        stakingRewards.supplyRewards(1000e18);
+        
+        assertEq(stakingRewards.lastUpdateTime(), block.timestamp);
+        assertEq(stakingRewards.periodFinish(), block.timestamp + REWARDS_DURATION);
+    }
+
+    function test_SupplyRewards_RevertWhen_NotOwner() public {
+        vm.startPrank(user1);
+        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", user1));
+        stakingRewards.supplyRewards(1000e18);
+        vm.stopPrank();
+    }
+
+    function test_RecoverERC20_Success() public {
+        uint256 amount = 100e18;
+        otherToken.transfer(address(stakingRewards), amount);
+        
+        uint256 initialBalance = otherToken.balanceOf(owner);
+        
+        vm.expectEmit(true, false, false, true);
+        emit Recovered(address(otherToken), amount);
+        
+        stakingRewards.recoverERC20(address(otherToken), amount);
+        
+        assertEq(otherToken.balanceOf(owner), initialBalance + amount);
+    }
+
+    function test_RecoverERC20_RevertWhen_StakingToken() public {
+        vm.expectRevert(abi.encodeWithSelector(CannotWithdrawStakingToken.selector, address(stakingToken)));
+        stakingRewards.recoverERC20(address(stakingToken), 100e18);
+    }
+
+    function test_RecoverERC20_RevertWhen_NotOwner() public {
+        vm.startPrank(user1);
+        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", user1));
+        stakingRewards.recoverERC20(address(otherToken), 100e18);
+        vm.stopPrank();
+    }
+
+    function test_SetRewardsDuration_Success() public {
+        uint256 newDuration = 86400 * 7; // 7 days
+        
+        vm.expectEmit(true, false, false, true);
+        emit RewardsDurationUpdated(newDuration);
+        
+        stakingRewards.setRewardsDuration(newDuration);
+        
+        assertEq(stakingRewards.rewardsDuration(), newDuration);
+    }
+
+    function test_SetRewardsDuration_RevertWhen_PeriodNotFinished() public {
+        // Start a rewards period
+        stakingRewards.setRewardYieldForYear(1e18);
+        stakingRewards.supplyRewards(1000e18);
+        
+        uint256 newDuration = 86400 * 7;
+        
+        vm.expectRevert(abi.encodeWithSelector(PreviousRewardsPeriodNotComplete.selector, block.timestamp, stakingRewards.periodFinish()));
+        stakingRewards.setRewardsDuration(newDuration);
+    }
+
+    function test_SetRewardsDuration_RevertWhen_NotOwner() public {
+        vm.startPrank(user1);
+        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", user1));
+        stakingRewards.setRewardsDuration(86400 * 7);
+        vm.stopPrank();
+    }
+
+    function test_Reclaim_Success() public {
+        uint256 amount = 1000e18;
+        stakingRewards.supplyRewards(amount);
+        uint256 initialBalance = rewardsToken.balanceOf(owner);
+        
+        stakingRewards.reclaim();
+        
+        assertEq(rewardsToken.balanceOf(owner), initialBalance + amount);
+        assertEq(rewardsToken.balanceOf(address(stakingRewards)), 0);
+
+        // TODO: deposited users can still pull their original staked tokens
+    }
+
+    function test_Reclaim_RevertWhen_NotOwner() public {
+        vm.startPrank(user1);
+        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", user1));
+        stakingRewards.reclaim();
+        vm.stopPrank();
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                             PAUSABLE TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_Pause_Success() public {
+        // BUG: Contract inherits from ERC20Pausable but doesn't expose pause/unpause functions
+        // This means the contract has pausable functionality but can never be paused
+        vm.skip(true);
+    }
+
+    function test_Unpause_Success() public {
+        // BUG: Contract inherits from ERC20Pausable but doesn't expose pause/unpause functions
+        vm.skip(true);
+    }
+
+    function test_Pause_RevertWhen_NotOwner() public {
+        // BUG: Contract inherits from ERC20Pausable but doesn't expose pause/unpause functions
+        vm.skip(true);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                             MODIFIER TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_UpdateReward_WithZeroAddress() public {
+        stakingRewards.setRewardYieldForYear(1e18);
+        
+        // This should work without reverting
+        stakingRewards.supplyRewards(1000e18);
+    }
+
+    function test_UpdateReward_WithValidAddress() public {
+        stakingRewards.setRewardYieldForYear(1e18);
+        stakingRewards.supplyRewards(1000e18);
+        rewardsToken.transfer(address(stakingRewards), 2000e18);
+        
+        vm.startPrank(user1);
+        stakingToken.approve(address(stakingRewards), 100e18);
+        stakingRewards.stake(100e18);
+        vm.stopPrank();
+        
+        // Move time forward
+        skip(3600);
+        
+        // Another action should update rewards
+        vm.startPrank(user1);
+        stakingToken.approve(address(stakingRewards), 100e18);
+        stakingRewards.stake(100e18);
+        
+        assertGt(stakingRewards.rewards(user1), 0);
+        vm.stopPrank();
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                             FUZZ TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function testFuzz_Stake_ValidAmounts(uint96 amount) public {
+        // Bound to reasonable values
+        amount = uint96(bound(amount, 1, 1000e18));
+        
+        // Setup rewards
+        stakingRewards.setRewardYieldForYear(1e18);
+        rewardsToken.transfer(address(stakingRewards), 10000e18);
+        
+        // Give user enough tokens
+        stakingToken.mint(user1, amount);
+        
+        vm.startPrank(user1);
+        stakingToken.approve(address(stakingRewards), amount);
+        stakingRewards.stake(amount);
+        
+        assertEq(stakingRewards.balanceOf(user1), amount);
+        vm.stopPrank();
+    }
+
+    function testFuzz_Withdraw_ValidAmounts(uint96 stakeAmount, uint96 withdrawAmount) public {
+        // Bound to reasonable values
+        stakeAmount = uint96(bound(stakeAmount, 1, 1000e18));
+        withdrawAmount = uint96(bound(withdrawAmount, 1, stakeAmount));
+        
+        // Setup rewards and staking
+        stakingRewards.setRewardYieldForYear(1e18);
+        rewardsToken.transfer(address(stakingRewards), 10000e18);
+        stakingToken.mint(user1, stakeAmount);
+        
+        vm.startPrank(user1);
+        stakingToken.approve(address(stakingRewards), stakeAmount);
+        stakingRewards.stake(stakeAmount);
+        vm.stopPrank();
+        
+        // Release rewards
+        stakingRewards.releaseRewards();
+        
+        vm.startPrank(user1);
+        stakingRewards.withdraw(withdrawAmount);
+        
+        assertEq(stakingRewards.balanceOf(user1), stakeAmount - withdrawAmount);
+        vm.stopPrank();
+    }
+
+    function testFuzz_RewardRate_ValidRates(uint96 rate) public {
+        // Bound to reasonable values (not too high to avoid overflow)
+        rate = uint96(bound(rate, 1, 1000e18));
+        
+        stakingRewards.setRewardYieldForYear(rate);
+        
+        assertEq(stakingRewards.rewardRate(), rate / 365 days);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                             INTEGRATION TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_Integration_CompleteFlow() public {
+        // 1. Set up rewards
+        stakingRewards.setRewardYieldForYear(1e18);
+        stakingRewards.supplyRewards(1000e18);
+        rewardsToken.transfer(address(stakingRewards), 5000e18);
+        
+        // 2. User stakes
+        vm.startPrank(user1);
+        stakingToken.approve(address(stakingRewards), 100e18);
+        stakingRewards.stake(100e18);
+        vm.stopPrank();
+        
+        // 3. Time passes
+        skip(3600);
+        
+        // 4. Check earned rewards
+        uint256 earned = stakingRewards.earned(user1);
+        assertEq(earned, 3600 * (1e18 / uint256(365 days)));
+        
+        // 5. Release rewards
+        stakingRewards.releaseRewards();
+        
+        // 6. User exits
+        vm.startPrank(user1);
+        stakingRewards.exit();
+        vm.stopPrank();
+        
+        // 7. Verify final state
+        assertEq(stakingRewards.balanceOf(user1), 0);
+        assertEq(stakingRewards.rewards(user1), 0);
+        assertEq(rewardsToken.balanceOf(user1), earned);
+    }
+
+    function test_Integration_MultipleUsers() public {
+        // Set up rewards
+        stakingRewards.setRewardYieldForYear(2e18);
+        stakingRewards.supplyRewards(1000e18);
+        
+        // User1 stakes
+        vm.startPrank(user1);
+        stakingToken.approve(address(stakingRewards), 100e18);
+        stakingRewards.stake(100e18);
+        vm.stopPrank();
+        
+        // Time passes
+        skip(1800); // 30 minutes
+        
+        // User2 stakes
+        vm.startPrank(user2);
+        stakingToken.approve(address(stakingRewards), 100e18);
+        stakingRewards.stake(100e18);
+        vm.stopPrank();
+        
+        // More time passes
+        skip(1800); // Another 30 minutes
+        
+        // Check rewards
+        uint256 user1Earned = stakingRewards.earned(user1);
+        uint256 user2Earned = stakingRewards.earned(user2);
+        
+        // User1 should have more rewards (staked earlier)
+        assertGt(user1Earned, user2Earned);
+        
+        // Total rewards should be reasonable
+        assertApproxEqAbs(user1Earned + user2Earned, 3600 * 2e18 / uint256(365 days), 1e18);
+    }
+}
