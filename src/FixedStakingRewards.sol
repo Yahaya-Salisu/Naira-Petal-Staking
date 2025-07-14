@@ -8,6 +8,7 @@ import "openzeppelin-contracts/contracts/access/Ownable.sol";
 
 // Inheritance
 import "./interfaces/IStakingRewards.sol";
+import {console} from "forge-std/console.sol";
 
 /* ========== CUSTOM ERRORS ========== */
 
@@ -19,7 +20,7 @@ error CannotWithdrawStakingToken(address attemptedToken);
 error PreviousRewardsPeriodNotComplete(uint256 currentTime, uint256 periodFinish);
 error ContractIsPaused();
 
-contract FixedStakingRewards is IStakingRewards, ERC20Pausable, ReentrancyGuard, Ownable {
+contract FixedStakingRewards is IStakingRewards, ERC20, ReentrancyGuard, Ownable {
     using SafeERC20 for IERC20;
     
     /* ========== STATE VARIABLES ========== */
@@ -60,7 +61,7 @@ contract FixedStakingRewards is IStakingRewards, ERC20Pausable, ReentrancyGuard,
         }
         return
             rewardPerTokenStored +
-                ((lastTimeRewardApplicable() - lastUpdateTime) * rewardRate * 1e18) / totalSupply();
+                (lastTimeRewardApplicable() - lastUpdateTime) * rewardRate;
     }
 
     function earned(address account) public override view returns (uint256) {
@@ -73,7 +74,7 @@ contract FixedStakingRewards is IStakingRewards, ERC20Pausable, ReentrancyGuard,
 
     /* ========== MUTATIVE FUNCTIONS ========== */
 
-    function stake(uint256 amount) external override nonReentrant notPaused updateReward(msg.sender) {
+    function stake(uint256 amount) external override nonReentrant updateReward(msg.sender) {
         if (amount == 0) revert CannotStakeZero();
 
         uint256 requiredRewards = (totalSupply() + amount) * getRewardForDuration() / 1e18;
@@ -113,6 +114,10 @@ contract FixedStakingRewards is IStakingRewards, ERC20Pausable, ReentrancyGuard,
     }
 
     function reclaim() external onlyOwner {
+        // contract is effectively shut down
+        rewardsAvailableDate = block.timestamp;
+        rewardRate = 0;
+        rewardPerTokenStored = 0;
         rewardsToken.safeTransfer(owner(), rewardsToken.balanceOf(address(this)));
     }
 
@@ -157,11 +162,6 @@ contract FixedStakingRewards is IStakingRewards, ERC20Pausable, ReentrancyGuard,
             rewards[account] = earned(account);
             userRewardPerTokenPaid[account] = rewardPerTokenStored;
         }
-        _;
-    }
-
-    modifier notPaused() {
-        if (paused()) revert ContractIsPaused();
         _;
     }
 

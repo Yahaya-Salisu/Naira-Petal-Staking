@@ -5,6 +5,7 @@ import {Test, console} from "forge-std/Test.sol";
 import {FixedStakingRewards} from "../src/FixedStakingRewards.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC20, IERC20Errors} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {console} from "forge-std/console.sol";
 
 // Import custom errors
 import {
@@ -156,7 +157,7 @@ contract FixedStakingRewardsTest is Test {
         skip(3600); // 1 hour
         
         uint256 result = stakingRewards.rewardPerToken();
-        uint256 expected = 3600 * (1e18 / uint256(365 days)) * 1e18 / 100e18; // timeElapsed * rewardRate * 1e18 / totalSupply
+        uint256 expected = 100 * 3600 * (1e18 / uint256(365 days)) * 1e18 / 100e18; // timeElapsed * rewardRate * 1e18 / totalSupply
         assertEq(result, expected);
     }
 
@@ -180,7 +181,7 @@ contract FixedStakingRewardsTest is Test {
         skip(3600); // 1 hour
         
         uint256 result = stakingRewards.earned(user1);
-        uint256 expected = 3600 * (1e18 / uint256(365 days)); // 1 hour * 1 token per second
+        uint256 expected = 100 * 3600 * (1e18 / uint256(365 days)); // 100 tokens * 1 hour * 1 token per second
         assertEq(result, expected);
     }
 
@@ -223,13 +224,6 @@ contract FixedStakingRewardsTest is Test {
         vm.expectRevert(abi.encodeWithSelector(CannotStakeZero.selector));
         stakingRewards.stake(0);
         vm.stopPrank();
-    }
-
-    function test_Stake_RevertWhen_ContractIsPaused() public {
-        // BUG: Contract inherits from ERC20Pausable but doesn't expose pause/unpause functions
-        // This test demonstrates the contract has pausable functionality but no way to pause it
-        // Skip this test since pause function is not exposed
-        vm.skip(true);
     }
 
     function test_Stake_RevertWhen_InsufficientRewards() public {
@@ -467,8 +461,70 @@ contract FixedStakingRewardsTest is Test {
         vm.stopPrank();
     }
 
+    function test_SetRewardYieldForYear_ChangeAfterUserDeposit() public {
+        // Set initial reward rate and supply rewards
+        stakingRewards.setRewardYieldForYear(1e18); // 1 token per year
+        stakingRewards.supplyRewards(5000e18);
+        
+        // User stakes
+        vm.startPrank(user1);
+        stakingToken.approve(address(stakingRewards), 300e18);
+        stakingRewards.stake(300e18);
+        vm.stopPrank();
+        
+        // Move time forward by 1 hour (should earn at 1e18/year rate)
+        skip(3600); // 1 hour
+        
+        // Calculate expected rewards at old rate
+        uint256 expectedRewardsOldRate = 300 * 3600 * (1e18 / uint256(365 days));
+        console.log("calling earned");
+        uint256 earnedAfterFirstHour = stakingRewards.earned(user1);
+        console.log("called earned", earnedAfterFirstHour);
+        assertEq(earnedAfterFirstHour, expectedRewardsOldRate);
+        
+        // Change reward rate to 2 tokens per year
+        stakingRewards.setRewardYieldForYear(2e18);
+        
+        // Verify rate changed
+        assertEq(stakingRewards.rewardRate(), 2e18 / uint256(365 days));
+        
+        // Move time forward by another hour (should earn at 2e18/year rate)
+        skip(3600); // Another hour
+        
+        // Calculate total expected rewards: 1 hour at old rate + 1 hour at new rate
+        uint256 expectedRewardsNewRate = 300 * 3600 * (2e18 / uint256(365 days));
+        uint256 totalExpectedRewards = expectedRewardsOldRate + expectedRewardsNewRate;
+        
+        uint256 earnedAfterRateChange = stakingRewards.earned(user1);
+        assertEq(earnedAfterRateChange, totalExpectedRewards);
+
+        // stake again to make sure rewards are preserved
+        vm.startPrank(user1);
+        stakingToken.approve(address(stakingRewards), 200e18);
+        stakingRewards.stake(200e18);
+        vm.stopPrank();
+
+        assertEq(stakingRewards.balanceOf(user1), 500e18);
+
+        // Verify rewards are preserved when rate changes by checking stored rewards
+        // The updateReward modifier should have stored the accumulated rewards
+        uint256 storedRewards = stakingRewards.rewards(user1);
+        assertEq(storedRewards, totalExpectedRewards);
+        uint256 earnedAfterFirstStake = stakingRewards.earned(user1);
+        assertEq(earnedAfterFirstStake, totalExpectedRewards);
+
+        // move time forward to make sure rewards are still preserved
+        skip(3600);
+
+        // verify rewards are still preserved
+        expectedRewardsNewRate = 500 * 3600 * (2e18 / uint256(365 days));
+        totalExpectedRewards += expectedRewardsNewRate;
+
+        uint256 earnedAfterSecondStake = stakingRewards.earned(user1);
+        assertEq(earnedAfterSecondStake, totalExpectedRewards);
+    }
+
     function test_SupplyRewards_Success() public {
-        // BUG: This function doesn't use the reward parameter
         stakingRewards.setRewardYieldForYear(1e18);
         
         vm.expectEmit(true, false, false, true);
@@ -546,13 +602,28 @@ contract FixedStakingRewardsTest is Test {
         uint256 amount = 1000e18;
         stakingRewards.supplyRewards(amount);
         uint256 initialBalance = rewardsToken.balanceOf(owner);
+
+        vm.startPrank(user1);
+        stakingToken.approve(address(stakingRewards), 100e18);
+        stakingRewards.stake(100e18);
+        vm.stopPrank();
+
+        vm.warp(block.timestamp + 1 days);
         
         stakingRewards.reclaim();
         
         assertEq(rewardsToken.balanceOf(owner), initialBalance + amount);
         assertEq(rewardsToken.balanceOf(address(stakingRewards)), 0);
 
-        // TODO: deposited users can still pull their original staked tokens
+        // deposited users can still pull their original staked tokens
+        vm.startPrank(user1);
+        stakingRewards.exit();
+        vm.stopPrank();
+
+        vm.warp(block.timestamp + 1 days);
+
+        assertEq(stakingToken.balanceOf(user1), 1000e18);
+        assertEq(rewardsToken.balanceOf(user1), 0);
     }
 
     function test_Reclaim_RevertWhen_NotOwner() public {
@@ -560,26 +631,6 @@ contract FixedStakingRewardsTest is Test {
         vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", user1));
         stakingRewards.reclaim();
         vm.stopPrank();
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                             PAUSABLE TESTS
-    //////////////////////////////////////////////////////////////*/
-
-    function test_Pause_Success() public {
-        // BUG: Contract inherits from ERC20Pausable but doesn't expose pause/unpause functions
-        // This means the contract has pausable functionality but can never be paused
-        vm.skip(true);
-    }
-
-    function test_Unpause_Success() public {
-        // BUG: Contract inherits from ERC20Pausable but doesn't expose pause/unpause functions
-        vm.skip(true);
-    }
-
-    function test_Pause_RevertWhen_NotOwner() public {
-        // BUG: Contract inherits from ERC20Pausable but doesn't expose pause/unpause functions
-        vm.skip(true);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -693,7 +744,7 @@ contract FixedStakingRewardsTest is Test {
         
         // 4. Check earned rewards
         uint256 earned = stakingRewards.earned(user1);
-        assertEq(earned, 3600 * (1e18 / uint256(365 days)));
+        assertEq(earned, 100 * 3600 * (1e18 / uint256(365 days)));
         
         // 5. Release rewards
         stakingRewards.releaseRewards();
@@ -740,6 +791,6 @@ contract FixedStakingRewardsTest is Test {
         assertGt(user1Earned, user2Earned);
         
         // Total rewards should be reasonable
-        assertApproxEqAbs(user1Earned + user2Earned, 3600 * 2e18 / uint256(365 days), 1e18);
+        assertApproxEqAbs(user1Earned + user2Earned, 100 * 3600 * 2e18 / uint256(365 days), 1e18);
     }
 }
