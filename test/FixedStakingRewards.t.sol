@@ -13,9 +13,7 @@ import {
     NotEnoughRewards,
     RewardsNotAvailableYet,
     CannotWithdrawZero,
-    CannotWithdrawStakingToken,
-    PreviousRewardsPeriodNotComplete,
-    ContractIsPaused
+    CannotWithdrawStakingToken
 } from "../src/FixedStakingRewards.sol";
 
 contract MockERC20 is ERC20 {
@@ -92,8 +90,6 @@ contract FixedStakingRewardsTest is Test {
         assertEq(address(stakingRewards.stakingToken()), address(stakingToken));
         assertEq(stakingRewards.owner(), owner);
         assertEq(stakingRewards.rewardRate(), 0);
-        assertEq(stakingRewards.periodFinish(), 0);
-        assertEq(stakingRewards.rewardsDuration(), REWARDS_DURATION);
         assertEq(stakingRewards.name(), "FixedStakingRewards");
         assertEq(stakingRewards.symbol(), "FSR");
         
@@ -115,27 +111,6 @@ contract FixedStakingRewardsTest is Test {
     /*//////////////////////////////////////////////////////////////
                              VIEW FUNCTION TESTS
     //////////////////////////////////////////////////////////////*/
-
-    function test_LastTimeRewardApplicable_BeforePeriodFinish() public {
-        // Set up a period finish in the future
-        stakingRewards.setRewardYieldForYear(1e18);
-        stakingRewards.supplyRewards(1000e18);
-        
-        uint256 result = stakingRewards.lastTimeRewardApplicable();
-        assertEq(result, block.timestamp);
-    }
-
-    function test_LastTimeRewardApplicable_AfterPeriodFinish() public {
-        // Set up a period finish in the past
-        stakingRewards.setRewardYieldForYear(1e18);
-        stakingRewards.supplyRewards(1000e18);
-        
-        // Move time forward past period finish
-        skip(REWARDS_DURATION + 1);
-        
-        uint256 result = stakingRewards.lastTimeRewardApplicable();
-        assertEq(result, stakingRewards.periodFinish());
-    }
 
     function test_RewardPerToken_WithZeroTotalSupply() public {
         uint256 result = stakingRewards.rewardPerToken();
@@ -533,7 +508,6 @@ contract FixedStakingRewardsTest is Test {
         stakingRewards.supplyRewards(1000e18);
         
         assertEq(stakingRewards.lastUpdateTime(), block.timestamp);
-        assertEq(stakingRewards.periodFinish(), block.timestamp + REWARDS_DURATION);
     }
 
     function test_SupplyRewards_RevertWhen_NotOwner() public {
@@ -566,35 +540,6 @@ contract FixedStakingRewardsTest is Test {
         vm.startPrank(user1);
         vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", user1));
         stakingRewards.recoverERC20(address(otherToken), 100e18);
-        vm.stopPrank();
-    }
-
-    function test_SetRewardsDuration_Success() public {
-        uint256 newDuration = 86400 * 7; // 7 days
-        
-        vm.expectEmit(true, false, false, true);
-        emit RewardsDurationUpdated(newDuration);
-        
-        stakingRewards.setRewardsDuration(newDuration);
-        
-        assertEq(stakingRewards.rewardsDuration(), newDuration);
-    }
-
-    function test_SetRewardsDuration_RevertWhen_PeriodNotFinished() public {
-        // Start a rewards period
-        stakingRewards.setRewardYieldForYear(1e18);
-        stakingRewards.supplyRewards(1000e18);
-        
-        uint256 newDuration = 86400 * 7;
-        
-        vm.expectRevert(abi.encodeWithSelector(PreviousRewardsPeriodNotComplete.selector, block.timestamp, stakingRewards.periodFinish()));
-        stakingRewards.setRewardsDuration(newDuration);
-    }
-
-    function test_SetRewardsDuration_RevertWhen_NotOwner() public {
-        vm.startPrank(user1);
-        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", user1));
-        stakingRewards.setRewardsDuration(86400 * 7);
         vm.stopPrank();
     }
 

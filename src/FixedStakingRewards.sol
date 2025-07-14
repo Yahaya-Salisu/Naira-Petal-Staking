@@ -17,8 +17,6 @@ error NotEnoughRewards(uint256 available, uint256 required);
 error RewardsNotAvailableYet(uint256 currentTime, uint256 availableTime);
 error CannotWithdrawZero();
 error CannotWithdrawStakingToken(address attemptedToken);
-error PreviousRewardsPeriodNotComplete(uint256 currentTime, uint256 periodFinish);
-error ContractIsPaused();
 
 contract FixedStakingRewards is IStakingRewards, ERC20, ReentrancyGuard, Ownable {
     using SafeERC20 for IERC20;
@@ -31,8 +29,6 @@ contract FixedStakingRewards is IStakingRewards, ERC20, ReentrancyGuard, Ownable
     uint256 public lastUpdateTime;
     uint256 public rewardPerTokenStored;
     uint256 public rewardsAvailableDate;
-    uint256 public periodFinish = 0;
-    uint256 public rewardsDuration = 86400 * 14; // 14 days
 
     mapping(address => uint256) public userRewardPerTokenPaid;
     mapping(address => uint256) public rewards;
@@ -51,17 +47,13 @@ contract FixedStakingRewards is IStakingRewards, ERC20, ReentrancyGuard, Ownable
 
     /* ========== VIEWS ========== */
 
-    function lastTimeRewardApplicable() public view returns (uint256) {
-        return block.timestamp < periodFinish ? block.timestamp : periodFinish;
-    }
-
     function rewardPerToken() public view returns (uint256) {
         if (totalSupply() == 0) {
             return rewardPerTokenStored;
         }
         return
             rewardPerTokenStored +
-                (lastTimeRewardApplicable() - lastUpdateTime) * rewardRate;
+                (block.timestamp - lastUpdateTime) * rewardRate;
     }
 
     function earned(address account) public override view returns (uint256) {
@@ -134,7 +126,6 @@ contract FixedStakingRewards is IStakingRewards, ERC20, ReentrancyGuard, Ownable
     function supplyRewards(uint256 reward) external onlyOwner updateReward(address(0)) {
         rewardsToken.safeTransferFrom(msg.sender, address(this), reward);
         lastUpdateTime = block.timestamp;
-        periodFinish = block.timestamp + rewardsDuration;
         emit RewardAdded(reward);
     }
 
@@ -145,19 +136,11 @@ contract FixedStakingRewards is IStakingRewards, ERC20, ReentrancyGuard, Ownable
         emit Recovered(tokenAddress, tokenAmount);
     }
 
-    function setRewardsDuration(uint256 _rewardsDuration) external onlyOwner {
-        if (block.timestamp <= periodFinish) {
-            revert PreviousRewardsPeriodNotComplete(block.timestamp, periodFinish);
-        }
-        rewardsDuration = _rewardsDuration;
-        emit RewardsDurationUpdated(rewardsDuration);
-    }
-
     /* ========== MODIFIERS ========== */
 
     modifier updateReward(address account) {
         rewardPerTokenStored = rewardPerToken();
-        lastUpdateTime = lastTimeRewardApplicable();
+        lastUpdateTime = block.timestamp;
         if (account != address(0)) {
             rewards[account] = earned(account);
             userRewardPerTokenPaid[account] = rewardPerTokenStored;
@@ -171,6 +154,5 @@ contract FixedStakingRewards is IStakingRewards, ERC20, ReentrancyGuard, Ownable
     event Staked(address indexed user, uint256 amount);
     event Withdrawn(address indexed user, uint256 amount);
     event RewardPaid(address indexed user, uint256 reward);
-    event RewardsDurationUpdated(uint256 newDuration);
     event Recovered(address token, uint256 amount);
 }
