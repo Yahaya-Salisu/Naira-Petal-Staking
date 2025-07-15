@@ -5,7 +5,7 @@ import {Test, console} from "forge-std/Test.sol";
 import {FixedStakingRewards} from "../src/FixedStakingRewards.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC20, IERC20Errors} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import {console} from "forge-std/console.sol";
+import {IChainlinkAggregator} from "../src/interfaces/IChainlinkAggregator.sol";
 
 // Import custom errors
 import {
@@ -15,6 +15,121 @@ import {
     CannotWithdrawZero,
     CannotWithdrawStakingToken
 } from "../src/FixedStakingRewards.sol";
+
+
+contract MockChainlinkAggregator is IChainlinkAggregator {
+    uint80 public roundId = 0;
+    uint8 public keyDecimals = 0;
+
+    struct Entry {
+        uint80 roundId;
+        int256 answer;
+        uint256 startedAt;
+        uint256 updatedAt;
+        uint80 answeredInRound;
+    }
+
+    mapping(uint => Entry) public entries;
+
+    bool public allRoundDataShouldRevert;
+    bool public latestRoundDataShouldRevert;
+
+    constructor() public {}
+
+    // Mock setup function
+    function setLatestAnswer(int256 answer, uint256 timestamp) external {
+        roundId++;
+        entries[roundId] = Entry({
+            roundId: roundId,
+            answer: answer,
+            startedAt: timestamp,
+            updatedAt: timestamp,
+            answeredInRound: roundId
+        });
+    }
+
+    function setLatestAnswerWithRound(
+        int256 answer,
+        uint256 timestamp,
+        uint80 _roundId
+    ) external {
+        roundId = _roundId;
+        entries[roundId] = Entry({
+            roundId: roundId,
+            answer: answer,
+            startedAt: timestamp,
+            updatedAt: timestamp,
+            answeredInRound: roundId
+        });
+    }
+
+    function setAllRoundDataShouldRevert(bool _shouldRevert) external {
+        allRoundDataShouldRevert = _shouldRevert;
+    }
+
+    function setLatestRoundDataShouldRevert(bool _shouldRevert) external {
+        latestRoundDataShouldRevert = _shouldRevert;
+    }
+
+    function setDecimals(uint8 _decimals) external {
+        keyDecimals = _decimals;
+    }
+
+    function latestRoundData()
+        external
+        view
+        returns (
+            uint80,
+            int256,
+            uint256,
+            uint256,
+            uint80
+        )
+    {
+        if (latestRoundDataShouldRevert) {
+            revert("latestRoundData reverted");
+        }
+        return getRoundData(uint80(latestRound()));
+    }
+
+    function latestRound() public view returns (uint256) {
+        return roundId;
+    }
+
+    function decimals() external view returns (uint8) {
+        return keyDecimals;
+    }
+
+    function getAnswer(uint256 _roundId) external view returns (int256) {
+        Entry memory entry = entries[_roundId];
+        return entry.answer;
+    }
+
+    function getTimestamp(uint256 _roundId) external view returns (uint256) {
+        Entry memory entry = entries[_roundId];
+        return entry.updatedAt;
+    }
+
+    function getRoundData(uint80 _roundId)
+        public
+        view
+        returns (
+            uint80,
+            int256,
+            uint256,
+            uint256,
+            uint80
+        )
+    {
+        if (allRoundDataShouldRevert) {
+            revert("getRoundData reverted");
+        }
+
+        Entry memory entry = entries[_roundId];
+        // Emulate a Chainlink aggregator
+        return (entry.roundId, entry.answer, entry.startedAt, entry.updatedAt, entry.answeredInRound);
+    }
+}
 
 contract MockERC20 is ERC20 {
     constructor(
@@ -39,6 +154,7 @@ contract FixedStakingRewardsTest is Test {
     MockERC20 public rewardsToken;
     MockERC20 public stakingToken;
     MockERC20 public otherToken;
+    MockChainlinkAggregator public mockAggregator;
     
     address public owner;
     address public user1;
@@ -64,12 +180,19 @@ contract FixedStakingRewardsTest is Test {
         rewardsToken = new MockERC20("RewardsToken", "RT", INITIAL_REWARDS_SUPPLY);
         stakingToken = new MockERC20("StakingToken", "ST", INITIAL_STAKING_SUPPLY);
         otherToken = new MockERC20("OtherToken", "OT", 1000e18);
+
+        // Deploy mock aggregator
+        mockAggregator = new MockChainlinkAggregator();
+
+        // assuming a 50c reward token rate
+        mockAggregator.setLatestAnswer(1e18 / 2, block.timestamp);
         
         // Deploy staking contract
         stakingRewards = new FixedStakingRewards(
             owner,
             address(rewardsToken),
-            address(stakingToken)
+            address(stakingToken),
+            address(mockAggregator)
         );
 
         // setup token allowances so we dont have to do it later
@@ -102,7 +225,8 @@ contract FixedStakingRewardsTest is Test {
         FixedStakingRewards newStaking = new FixedStakingRewards(
             newOwner,
             address(rewardsToken),
-            address(stakingToken)
+            address(stakingToken),
+            address(mockAggregator)
         );
         
         assertEq(newStaking.owner(), newOwner);
@@ -132,7 +256,7 @@ contract FixedStakingRewardsTest is Test {
         skip(3600); // 1 hour
         
         uint256 result = stakingRewards.rewardPerToken();
-        uint256 expected = 100 * 3600 * (1e18 / uint256(365 days)) * 1e18 / 100e18; // timeElapsed * rewardRate * 1e18 / totalSupply
+        uint256 expected = 100 * 3600 * (1e18 * 2 / uint256(365 days)) * 1e18 / 100e18; // timeElapsed * rewardRate * 1e18 / totalSupply
         assertEq(result, expected);
     }
 
@@ -156,14 +280,14 @@ contract FixedStakingRewardsTest is Test {
         skip(3600); // 1 hour
         
         uint256 result = stakingRewards.earned(user1);
-        uint256 expected = 100 * 3600 * (1e18 / uint256(365 days)); // 100 tokens * 1 hour * 1 token per second
+        uint256 expected = 100 * 3600 * (1e18 * 2 / uint256(365 days)); // 100 tokens * 1 hour * 1 token per second / 0.5 token rate
         assertEq(result, expected);
     }
 
     function test_GetRewardForDuration_ReturnsCorrectValue() public {
         stakingRewards.setRewardYieldForYear(1e18);
         uint256 result = stakingRewards.getRewardForDuration();
-        uint256 expected = (1e18 / uint256(365 days)) * (86400 * 14); // Should use rewardsDuration instead
+        uint256 expected = (1e18 * 2 / uint256(365 days)) * (86400 * 14); // Should use rewardsDuration instead
         assertEq(result, expected);
     }
 
@@ -210,7 +334,7 @@ contract FixedStakingRewardsTest is Test {
         
         uint256 available = 1e18;
         // rounding makes it hard so just put the value directly
-        uint256 required = 3835616438263680000;
+        uint256 required = 7671232876648320000;
         
         vm.expectRevert(abi.encodeWithSelector(NotEnoughRewards.selector, available, required));
         stakingRewards.stake(100e18);
@@ -426,7 +550,7 @@ contract FixedStakingRewardsTest is Test {
         
         stakingRewards.setRewardYieldForYear(newRate);
         
-        assertEq(stakingRewards.rewardRate(), newRate / 365 days);
+        assertEq(stakingRewards.rewardRate(), newRate * 2 / 365 days);
     }
 
     function test_SetRewardRate_RevertWhen_NotOwner() public {
@@ -451,23 +575,21 @@ contract FixedStakingRewardsTest is Test {
         skip(3600); // 1 hour
         
         // Calculate expected rewards at old rate
-        uint256 expectedRewardsOldRate = 300 * 3600 * (1e18 / uint256(365 days));
-        console.log("calling earned");
+        uint256 expectedRewardsOldRate = 300 * 3600 * (1e18 * 2 / uint256(365 days));
         uint256 earnedAfterFirstHour = stakingRewards.earned(user1);
-        console.log("called earned", earnedAfterFirstHour);
         assertEq(earnedAfterFirstHour, expectedRewardsOldRate);
         
         // Change reward rate to 2 tokens per year
         stakingRewards.setRewardYieldForYear(2e18);
         
         // Verify rate changed
-        assertEq(stakingRewards.rewardRate(), 2e18 / uint256(365 days));
+        assertEq(stakingRewards.rewardRate(), 2e18 * 2 / uint256(365 days));
         
         // Move time forward by another hour (should earn at 2e18/year rate)
         skip(3600); // Another hour
         
         // Calculate total expected rewards: 1 hour at old rate + 1 hour at new rate
-        uint256 expectedRewardsNewRate = 300 * 3600 * (2e18 / uint256(365 days));
+        uint256 expectedRewardsNewRate = 300 * 3600 * (2e18 * 2 / uint256(365 days));
         uint256 totalExpectedRewards = expectedRewardsOldRate + expectedRewardsNewRate;
         
         uint256 earnedAfterRateChange = stakingRewards.earned(user1);
@@ -492,7 +614,7 @@ contract FixedStakingRewardsTest is Test {
         skip(3600);
 
         // verify rewards are still preserved
-        expectedRewardsNewRate = 500 * 3600 * (2e18 / uint256(365 days));
+        expectedRewardsNewRate = 500 * 3600 * (2e18 * 2 / uint256(365 days));
         totalExpectedRewards += expectedRewardsNewRate;
 
         uint256 earnedAfterSecondStake = stakingRewards.earned(user1);
@@ -576,6 +698,67 @@ contract FixedStakingRewardsTest is Test {
         vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", user1));
         stakingRewards.reclaim();
         vm.stopPrank();
+    }
+
+    function test_Rebalance_Success() public {
+        // Set target APY to 1 token per year
+        uint256 targetApy = 1e18;
+        stakingRewards.setRewardYieldForYear(targetApy);
+        
+        // Verify initial state - aggregator is set to 0.5 (1e18 / 2) in setUp
+        int256 initialRate = 1e18 / 2; // 0.5 tokens per USD
+        uint256 expectedRewardRate = targetApy * 1e18 / uint256(initialRate) / 365 days;
+        assertEq(stakingRewards.rewardRate(), expectedRewardRate);
+        
+        // Change aggregator rate to 0.25 (token price doubled)
+        mockAggregator.setLatestAnswer(1e18 / 4, block.timestamp);
+        
+        // Call rebalance
+        stakingRewards.rebalance();
+        
+        // Verify reward rate updated correctly
+        uint256 newExpectedRewardRate = targetApy * 1e18 / uint256(1e18 / 4) / 365 days;
+        assertEq(stakingRewards.rewardRate(), newExpectedRewardRate);
+        
+        // New rate should be double the original (since token price halved)
+        assertApproxEqAbs(stakingRewards.rewardRate(), expectedRewardRate * 2, 10);
+    }
+
+    function test_Rebalance_UpdatesRewards() public {
+        // Set up staking scenario
+        stakingRewards.setRewardYieldForYear(1e18);
+        stakingRewards.supplyRewards(1000e18);
+        
+        vm.startPrank(user1);
+        stakingToken.approve(address(stakingRewards), 100e18);
+        stakingRewards.stake(100e18);
+        vm.stopPrank();
+        
+        // Move time forward to accumulate rewards
+        skip(3600); // 1 hour
+        
+        uint256 earnedBefore = stakingRewards.earned(user1);
+        assertGt(earnedBefore, 0);
+        
+        // Change the aggregator rate and rebalance
+        mockAggregator.setLatestAnswer(1e18, block.timestamp); // Rate changes from 0.5 to 1.0
+        stakingRewards.rebalance();
+        
+        // Rewards should be preserved due to updateReward modifier
+        uint256 earnedAfter = stakingRewards.earned(user1);
+        assertEq(earnedAfter, earnedBefore);
+    }
+
+    function test_Rebalance_WithZeroTargetApy() public {
+        // Set target APY to 0
+        stakingRewards.setRewardYieldForYear(0);
+        
+        // Change aggregator rate
+        mockAggregator.setLatestAnswer(1e18, block.timestamp);
+        
+        // Rebalance should result in 0 reward rate
+        stakingRewards.rebalance();
+        assertEq(stakingRewards.rewardRate(), 0);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -665,7 +848,7 @@ contract FixedStakingRewardsTest is Test {
         
         stakingRewards.setRewardYieldForYear(rate);
         
-        assertEq(stakingRewards.rewardRate(), rate / 365 days);
+        assertEq(stakingRewards.rewardRate(), rate * 2 / 365 days);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -689,7 +872,7 @@ contract FixedStakingRewardsTest is Test {
         
         // 4. Check earned rewards
         uint256 earned = stakingRewards.earned(user1);
-        assertEq(earned, 100 * 3600 * (1e18 / uint256(365 days)));
+        assertEq(earned, 100 * 3600 * (1e18 * 2 / uint256(365 days)));
         
         // 5. Release rewards
         stakingRewards.releaseRewards();

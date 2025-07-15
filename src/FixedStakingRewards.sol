@@ -8,6 +8,7 @@ import "openzeppelin-contracts/contracts/access/Ownable.sol";
 
 // Inheritance
 import "./interfaces/IStakingRewards.sol";
+import "./interfaces/IChainlinkAggregator.sol";
 import {console} from "forge-std/console.sol";
 
 /* ========== CUSTOM ERRORS ========== */
@@ -23,12 +24,15 @@ contract FixedStakingRewards is IStakingRewards, ERC20, ReentrancyGuard, Ownable
     
     /* ========== STATE VARIABLES ========== */
 
-    IERC20 public rewardsToken;
-    IERC20 public stakingToken;
+    IERC20 immutable public rewardsToken;
+    IERC20 immutable public stakingToken;
+    IChainlinkAggregator immutable public rewardsTokenRateAggregator;
+    uint256 public targetRewardApy = 0;
     uint256 public rewardRate = 0;
     uint256 public lastUpdateTime;
     uint256 public rewardPerTokenStored;
     uint256 public rewardsAvailableDate;
+
 
     mapping(address => uint256) public userRewardPerTokenPaid;
     mapping(address => uint256) public rewards;
@@ -38,10 +42,12 @@ contract FixedStakingRewards is IStakingRewards, ERC20, ReentrancyGuard, Ownable
     constructor(
         address _owner,
         address _rewardsToken,
-        address _stakingToken
+        address _stakingToken,
+        address _rewardsTokenRateAggregator
     ) ERC20("FixedStakingRewards", "FSR") Ownable(_owner) {
         rewardsToken = IERC20(_rewardsToken);
         stakingToken = IERC20(_stakingToken);
+        rewardsTokenRateAggregator = IChainlinkAggregator(_rewardsTokenRateAggregator);
         rewardsAvailableDate = block.timestamp + 86400 * 365;
     }
 
@@ -69,6 +75,8 @@ contract FixedStakingRewards is IStakingRewards, ERC20, ReentrancyGuard, Ownable
     function stake(uint256 amount) external override nonReentrant updateReward(msg.sender) {
         if (amount == 0) revert CannotStakeZero();
 
+        _rebalance();
+
         uint256 requiredRewards = (totalSupply() + amount) * getRewardForDuration() / 1e18;
         if (requiredRewards > rewardsToken.balanceOf(address(this))) {
             revert NotEnoughRewards(
@@ -85,6 +93,9 @@ contract FixedStakingRewards is IStakingRewards, ERC20, ReentrancyGuard, Ownable
     function withdraw(uint256 amount) public override nonReentrant updateReward(msg.sender) {
         if (block.timestamp < rewardsAvailableDate) revert RewardsNotAvailableYet(block.timestamp, rewardsAvailableDate);
         if (amount == 0) revert CannotWithdrawZero();
+
+        _rebalance();
+
         _burn(msg.sender, amount);
         stakingToken.safeTransfer(msg.sender, amount);
         emit Withdrawn(msg.sender, amount);
@@ -108,9 +119,14 @@ contract FixedStakingRewards is IStakingRewards, ERC20, ReentrancyGuard, Ownable
     function reclaim() external onlyOwner {
         // contract is effectively shut down
         rewardsAvailableDate = block.timestamp;
+        targetRewardApy = 0;
         rewardRate = 0;
         rewardPerTokenStored = 0;
         rewardsToken.safeTransfer(owner(), rewardsToken.balanceOf(address(this)));
+    }
+
+    function rebalance() external updateReward(address(0)) {
+        _rebalance();
     }
 
     /* ========== RESTRICTED FUNCTIONS ========== */
@@ -120,7 +136,8 @@ contract FixedStakingRewards is IStakingRewards, ERC20, ReentrancyGuard, Ownable
     }
 
     function setRewardYieldForYear(uint256 rewardApy) external onlyOwner updateReward(address(0)) {
-        rewardRate = rewardApy / 365 days;
+        targetRewardApy = rewardApy;
+        _rebalance();
     }
 
     function supplyRewards(uint256 reward) external onlyOwner updateReward(address(0)) {
@@ -134,6 +151,12 @@ contract FixedStakingRewards is IStakingRewards, ERC20, ReentrancyGuard, Ownable
         if (tokenAddress == address(stakingToken)) revert CannotWithdrawStakingToken(tokenAddress);
         IERC20(tokenAddress).safeTransfer(owner(), tokenAmount);
         emit Recovered(tokenAddress, tokenAmount);
+    }
+
+    /* ========== INTERNAL FUNCTIONS ========== */
+    function _rebalance() internal {
+        (, int256 currentRewardTokenRate, , , ) = rewardsTokenRateAggregator.latestRoundData();
+        rewardRate = targetRewardApy * 1e18 / uint256(currentRewardTokenRate) / 365 days;
     }
 
     /* ========== MODIFIERS ========== */
