@@ -132,16 +132,17 @@ contract FixedStakingRewards is IStakingRewards, ERC20, ReentrancyGuard, Ownable
 
     function releaseRewards() external onlyOwner {
         rewardsAvailableDate = block.timestamp;
+        emit RewardsMadeAvailable(block.timestamp);
     }
 
     function setRewardYieldForYear(uint256 rewardApy) external onlyOwner updateReward(address(0)) {
         targetRewardApy = rewardApy;
         _rebalance();
+        emit RewardYieldSet(rewardApy);
     }
 
     function supplyRewards(uint256 reward) external onlyOwner updateReward(address(0)) {
         rewardsToken.safeTransferFrom(msg.sender, address(this), reward);
-        lastUpdateTime = block.timestamp;
         emit RewardAdded(reward);
     }
 
@@ -177,4 +178,6 @@ contract FixedStakingRewards is IStakingRewards, ERC20, ReentrancyGuard, Ownable
     event Withdrawn(address indexed user, uint256 amount);
     event RewardPaid(address indexed user, uint256 reward);
     event Recovered(address token, uint256 amount);
+    event RewardsMadeAvailable(uint256 timestampAvailable);
+    event RewardYieldSet(uint256 apy);
 }
