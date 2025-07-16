@@ -121,7 +121,6 @@ contract FixedStakingRewards is IStakingRewards, ERC20, ReentrancyGuard, Ownable
         rewardsAvailableDate = block.timestamp;
         targetRewardApy = 0;
         rewardRate = 0;
-        rewardPerTokenStored = 0;
         rewardsToken.safeTransfer(owner(), rewardsToken.balanceOf(address(this)));
     }
 
