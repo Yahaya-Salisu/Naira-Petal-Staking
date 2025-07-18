@@ -13,7 +13,8 @@ import {
     NotEnoughRewards,
     RewardsNotAvailableYet,
     CannotWithdrawZero,
-    CannotWithdrawStakingToken
+    CannotWithdrawStakingToken,
+    InvalidPriceFeed
 } from "../src/FixedStakingRewards.sol";
 
 
@@ -172,6 +173,8 @@ contract FixedStakingRewardsTest is Test {
     event Recovered(address token, uint256 amount);
 
     function setUp() public {
+        vm.warp(1000000000);
+
         owner = address(this);
         user1 = makeAddr("user1");
         user2 = makeAddr("user2");
@@ -597,6 +600,7 @@ contract FixedStakingRewardsTest is Test {
         assertEq(earnedAfterRateChange, totalExpectedRewards);
 
         // stake again to make sure rewards are preserved
+        mockAggregator.setLatestAnswer(1e8 / 2, block.timestamp);
         vm.startPrank(user1);
         stakingToken.approve(address(stakingRewards), 200e18);
         stakingRewards.stake(200e18);
@@ -678,6 +682,7 @@ contract FixedStakingRewardsTest is Test {
 
         vm.warp(block.timestamp + 1 days);
         
+        mockAggregator.setLatestAnswer(1e8, block.timestamp);
         stakingRewards.reclaim();
         
         assertEq(rewardsToken.balanceOf(owner), initialBalance + amount);
@@ -760,6 +765,44 @@ contract FixedStakingRewardsTest is Test {
         // Rebalance should result in 0 reward rate
         stakingRewards.rebalance();
         assertEq(stakingRewards.rewardRate(), 0);
+    }
+
+    function test_Rebalance_RevertWhen_PriceFeedReturnsZero() public {
+        // Set target APY
+        stakingRewards.setRewardYieldForYear(1e18);
+        
+        // Set aggregator to return zero rate
+        mockAggregator.setLatestAnswer(0, block.timestamp);
+        
+        // Rebalance should revert with InvalidPriceFeed
+        vm.expectRevert(abi.encodeWithSelector(InvalidPriceFeed.selector, block.timestamp, int256(0)));
+        stakingRewards.rebalance();
+    }
+
+    function test_Rebalance_RevertWhen_PriceFeedIsStale() public {
+        // Set target APY
+        stakingRewards.setRewardYieldForYear(1e18);
+        
+        // Set aggregator with stale data (2 hours old)
+        uint256 staleTimestamp = block.timestamp - 2 hours;
+        mockAggregator.setLatestAnswer(1e8 / 2, staleTimestamp);
+        
+        // Rebalance should revert with InvalidPriceFeed
+        vm.expectRevert(abi.encodeWithSelector(InvalidPriceFeed.selector, staleTimestamp, int256(1e8 / 2)));
+        stakingRewards.rebalance();
+    }
+
+    function test_Rebalance_RevertWhen_PriceFeedIsStaleExactly1Hour() public {
+        // Set target APY
+        stakingRewards.setRewardYieldForYear(1e18);
+        
+        // Set aggregator with data exactly 1 hour old (should still revert)
+        uint256 staleTimestamp = block.timestamp - 1 hours - 1;
+        mockAggregator.setLatestAnswer(1e8 / 2, staleTimestamp);
+        
+        // Rebalance should revert with InvalidPriceFeed
+        vm.expectRevert(abi.encodeWithSelector(InvalidPriceFeed.selector, staleTimestamp, int256(1e8 / 2)));
+        stakingRewards.rebalance();
     }
 
     /*//////////////////////////////////////////////////////////////

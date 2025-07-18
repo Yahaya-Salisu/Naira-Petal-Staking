@@ -17,6 +17,7 @@ error NotEnoughRewards(uint256 available, uint256 required);
 error RewardsNotAvailableYet(uint256 currentTime, uint256 availableTime);
 error CannotWithdrawZero();
 error CannotWithdrawStakingToken(address attemptedToken);
+error InvalidPriceFeed(uint256 updateTime, int256 currentRewardTokenRate);
 
 contract FixedStakingRewards is IStakingRewards, ERC20, ReentrancyGuard, Ownable {
     using SafeERC20 for IERC20;
@@ -156,7 +157,10 @@ contract FixedStakingRewards is IStakingRewards, ERC20, ReentrancyGuard, Ownable
 
     /* ========== INTERNAL FUNCTIONS ========== */
     function _rebalance() internal {
-        (, int256 currentRewardTokenRate, , , ) = rewardsTokenRateAggregator.latestRoundData();
+        (, int256 currentRewardTokenRate, , uint256 updateTime, ) = rewardsTokenRateAggregator.latestRoundData();
+        if (currentRewardTokenRate == 0 || updateTime < block.timestamp - 1 hours) {
+            revert InvalidPriceFeed(updateTime, currentRewardTokenRate);
+        }
         rewardRate = targetRewardApy * 1e18 / (uint256(currentRewardTokenRate) * 10 ** (18 - rewardsTokenRateDecimals)) / 365 days;
     }
 
