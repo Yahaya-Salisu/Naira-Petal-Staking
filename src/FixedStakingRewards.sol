@@ -9,7 +9,6 @@ import "openzeppelin-contracts/contracts/access/Ownable.sol";
 // Inheritance
 import "./interfaces/IStakingRewards.sol";
 import "./interfaces/IChainlinkAggregator.sol";
-import {console} from "forge-std/console.sol";
 
 /* ========== CUSTOM ERRORS ========== */
 
@@ -27,6 +26,7 @@ contract FixedStakingRewards is IStakingRewards, ERC20, ReentrancyGuard, Ownable
     IERC20 immutable public rewardsToken;
     IERC20 immutable public stakingToken;
     IChainlinkAggregator immutable public rewardsTokenRateAggregator;
+    uint256 public immutable rewardsTokenRateDecimals;
     uint256 public targetRewardApy = 0;
     uint256 public rewardRate = 0;
     uint256 public lastUpdateTime;
@@ -48,6 +48,7 @@ contract FixedStakingRewards is IStakingRewards, ERC20, ReentrancyGuard, Ownable
         rewardsToken = IERC20(_rewardsToken);
         stakingToken = IERC20(_stakingToken);
         rewardsTokenRateAggregator = IChainlinkAggregator(_rewardsTokenRateAggregator);
+        rewardsTokenRateDecimals = rewardsTokenRateAggregator.decimals();
         rewardsAvailableDate = block.timestamp + 86400 * 365;
     }
 
@@ -156,7 +157,7 @@ contract FixedStakingRewards is IStakingRewards, ERC20, ReentrancyGuard, Ownable
     /* ========== INTERNAL FUNCTIONS ========== */
     function _rebalance() internal {
         (, int256 currentRewardTokenRate, , , ) = rewardsTokenRateAggregator.latestRoundData();
-        rewardRate = targetRewardApy * 1e18 / uint256(currentRewardTokenRate) / 365 days;
+        rewardRate = targetRewardApy * 1e18 / (uint256(currentRewardTokenRate) * 10 ** (18 - rewardsTokenRateDecimals)) / 365 days;
     }
 
     /* ========== MODIFIERS ========== */

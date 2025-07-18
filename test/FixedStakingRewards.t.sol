@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.13;
 
-import {Test, console} from "forge-std/Test.sol";
+import {Test} from "forge-std/Test.sol";
 import {FixedStakingRewards} from "../src/FixedStakingRewards.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC20, IERC20Errors} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
@@ -185,7 +185,8 @@ contract FixedStakingRewardsTest is Test {
         mockAggregator = new MockChainlinkAggregator();
 
         // assuming a 50c reward token rate
-        mockAggregator.setLatestAnswer(1e18 / 2, block.timestamp);
+        mockAggregator.setDecimals(8);
+        mockAggregator.setLatestAnswer(1e8 / 2, block.timestamp);
         
         // Deploy staking contract
         stakingRewards = new FixedStakingRewards(
@@ -711,7 +712,7 @@ contract FixedStakingRewardsTest is Test {
         assertEq(stakingRewards.rewardRate(), expectedRewardRate);
         
         // Change aggregator rate to 0.25 (token price doubled)
-        mockAggregator.setLatestAnswer(1e18 / 4, block.timestamp);
+        mockAggregator.setLatestAnswer(1e8 / 4, block.timestamp);
         
         // Call rebalance
         stakingRewards.rebalance();
@@ -741,7 +742,7 @@ contract FixedStakingRewardsTest is Test {
         assertGt(earnedBefore, 0);
         
         // Change the aggregator rate and rebalance
-        mockAggregator.setLatestAnswer(1e18, block.timestamp); // Rate changes from 0.5 to 1.0
+        mockAggregator.setLatestAnswer(1e8, block.timestamp); // Rate changes from 0.5 to 1.0
         stakingRewards.rebalance();
         
         // Rewards should be preserved due to updateReward modifier
@@ -754,7 +755,7 @@ contract FixedStakingRewardsTest is Test {
         stakingRewards.setRewardYieldForYear(0);
         
         // Change aggregator rate
-        mockAggregator.setLatestAnswer(1e18, block.timestamp);
+        mockAggregator.setLatestAnswer(1e8, block.timestamp);
         
         // Rebalance should result in 0 reward rate
         stakingRewards.rebalance();
