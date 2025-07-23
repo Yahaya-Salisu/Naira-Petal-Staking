@@ -21,12 +21,12 @@ error InvalidPriceFeed(uint256 updateTime, int256 currentRewardTokenRate);
 
 contract FixedStakingRewards is IStakingRewards, ERC20, ReentrancyGuard, Ownable {
     using SafeERC20 for IERC20;
-    
+
     /* ========== STATE VARIABLES ========== */
 
-    IERC20 immutable public rewardsToken;
-    IERC20 immutable public stakingToken;
-    IChainlinkAggregator immutable public rewardsTokenRateAggregator;
+    IERC20 public immutable rewardsToken;
+    IERC20 public immutable stakingToken;
+    IChainlinkAggregator public immutable rewardsTokenRateAggregator;
     uint256 public immutable rewardsTokenRateDecimals;
     uint256 public targetRewardApy = 0;
     uint256 public rewardRate = 0;
@@ -34,18 +34,15 @@ contract FixedStakingRewards is IStakingRewards, ERC20, ReentrancyGuard, Ownable
     uint256 public rewardPerTokenStored;
     uint256 public rewardsAvailableDate;
 
-
     mapping(address => uint256) public userRewardPerTokenPaid;
     mapping(address => uint256) public rewards;
 
     /* ========== CONSTRUCTOR ========== */
 
-    constructor(
-        address _owner,
-        address _rewardsToken,
-        address _stakingToken,
-        address _rewardsTokenRateAggregator
-    ) ERC20("FixedStakingRewards", "FSR") Ownable(_owner) {
+    constructor(address _owner, address _rewardsToken, address _stakingToken, address _rewardsTokenRateAggregator)
+        ERC20("FixedStakingRewards", "FSR")
+        Ownable(_owner)
+    {
         rewardsToken = IERC20(_rewardsToken);
         stakingToken = IERC20(_stakingToken);
         rewardsTokenRateAggregator = IChainlinkAggregator(_rewardsTokenRateAggregator);
@@ -59,16 +56,14 @@ contract FixedStakingRewards is IStakingRewards, ERC20, ReentrancyGuard, Ownable
         if (totalSupply() == 0) {
             return rewardPerTokenStored;
         }
-        return
-            rewardPerTokenStored +
-                (block.timestamp - lastUpdateTime) * rewardRate;
+        return rewardPerTokenStored + (block.timestamp - lastUpdateTime) * rewardRate;
     }
 
-    function earned(address account) public override view returns (uint256) {
+    function earned(address account) public view override returns (uint256) {
         return (balanceOf(account) * (rewardPerToken() - userRewardPerTokenPaid[account])) / 1e18 + rewards[account];
     }
 
-    function getRewardForDuration() public override view returns (uint256) {
+    function getRewardForDuration() public view override returns (uint256) {
         return rewardRate * 14 days;
     }
 
@@ -81,10 +76,7 @@ contract FixedStakingRewards is IStakingRewards, ERC20, ReentrancyGuard, Ownable
 
         uint256 requiredRewards = (totalSupply() + amount) * getRewardForDuration() / 1e18;
         if (requiredRewards > rewardsToken.balanceOf(address(this))) {
-            revert NotEnoughRewards(
-                rewardsToken.balanceOf(address(this)),
-                requiredRewards
-            );
+            revert NotEnoughRewards(rewardsToken.balanceOf(address(this)), requiredRewards);
         }
 
         _mint(msg.sender, amount);
@@ -93,7 +85,9 @@ contract FixedStakingRewards is IStakingRewards, ERC20, ReentrancyGuard, Ownable
     }
 
     function withdraw(uint256 amount) public override nonReentrant updateReward(msg.sender) {
-        if (block.timestamp < rewardsAvailableDate) revert RewardsNotAvailableYet(block.timestamp, rewardsAvailableDate);
+        if (block.timestamp < rewardsAvailableDate) {
+            revert RewardsNotAvailableYet(block.timestamp, rewardsAvailableDate);
+        }
         if (amount == 0) revert CannotWithdrawZero();
 
         _rebalance();
@@ -104,7 +98,9 @@ contract FixedStakingRewards is IStakingRewards, ERC20, ReentrancyGuard, Ownable
     }
 
     function getReward() public override nonReentrant updateReward(msg.sender) {
-        if (block.timestamp < rewardsAvailableDate) revert RewardsNotAvailableYet(block.timestamp, rewardsAvailableDate);
+        if (block.timestamp < rewardsAvailableDate) {
+            revert RewardsNotAvailableYet(block.timestamp, rewardsAvailableDate);
+        }
         uint256 reward = rewards[msg.sender];
         if (reward > 0) {
             rewards[msg.sender] = 0;
@@ -157,11 +153,12 @@ contract FixedStakingRewards is IStakingRewards, ERC20, ReentrancyGuard, Ownable
 
     /* ========== INTERNAL FUNCTIONS ========== */
     function _rebalance() internal {
-        (, int256 currentRewardTokenRate, , uint256 updateTime, ) = rewardsTokenRateAggregator.latestRoundData();
-        if (currentRewardTokenRate == 0 || updateTime < block.timestamp - 1 hours) {
+        (, int256 currentRewardTokenRate,, uint256 updateTime,) = rewardsTokenRateAggregator.latestRoundData();
+        if (currentRewardTokenRate == 0 || updateTime < block.timestamp - 1 days - 1 hours) {
             revert InvalidPriceFeed(updateTime, currentRewardTokenRate);
         }
-        rewardRate = targetRewardApy * 1e18 / (uint256(currentRewardTokenRate) * 10 ** (18 - rewardsTokenRateDecimals)) / 365 days;
+        rewardRate = targetRewardApy * 1e18 / (uint256(currentRewardTokenRate) * 10 ** (18 - rewardsTokenRateDecimals))
+            / 365 days;
     }
 
     /* ========== MODIFIERS ========== */

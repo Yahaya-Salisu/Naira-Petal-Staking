@@ -17,7 +17,6 @@ import {
     InvalidPriceFeed
 } from "../src/FixedStakingRewards.sol";
 
-
 contract MockChainlinkAggregator is IChainlinkAggregator {
     uint80 public roundId = 0;
     uint8 public keyDecimals = 0;
@@ -30,12 +29,10 @@ contract MockChainlinkAggregator is IChainlinkAggregator {
         uint80 answeredInRound;
     }
 
-    mapping(uint => Entry) public entries;
+    mapping(uint256 => Entry) public entries;
 
     bool public allRoundDataShouldRevert;
     bool public latestRoundDataShouldRevert;
-
-    constructor() public {}
 
     // Mock setup function
     function setLatestAnswer(int256 answer, uint256 timestamp) external {
@@ -49,11 +46,7 @@ contract MockChainlinkAggregator is IChainlinkAggregator {
         });
     }
 
-    function setLatestAnswerWithRound(
-        int256 answer,
-        uint256 timestamp,
-        uint80 _roundId
-    ) external {
+    function setLatestAnswerWithRound(int256 answer, uint256 timestamp, uint80 _roundId) external {
         roundId = _roundId;
         entries[roundId] = Entry({
             roundId: roundId,
@@ -76,17 +69,7 @@ contract MockChainlinkAggregator is IChainlinkAggregator {
         keyDecimals = _decimals;
     }
 
-    function latestRoundData()
-        external
-        view
-        returns (
-            uint80,
-            int256,
-            uint256,
-            uint256,
-            uint80
-        )
-    {
+    function latestRoundData() external view returns (uint80, int256, uint256, uint256, uint80) {
         if (latestRoundDataShouldRevert) {
             revert("latestRoundData reverted");
         }
@@ -111,17 +94,7 @@ contract MockChainlinkAggregator is IChainlinkAggregator {
         return entry.updatedAt;
     }
 
-    function getRoundData(uint80 _roundId)
-        public
-        view
-        returns (
-            uint80,
-            int256,
-            uint256,
-            uint256,
-            uint80
-        )
-    {
+    function getRoundData(uint80 _roundId) public view returns (uint80, int256, uint256, uint256, uint80) {
         if (allRoundDataShouldRevert) {
             revert("getRoundData reverted");
         }
@@ -133,18 +106,14 @@ contract MockChainlinkAggregator is IChainlinkAggregator {
 }
 
 contract MockERC20 is ERC20 {
-    constructor(
-        string memory name,
-        string memory symbol,
-        uint256 initialSupply
-    ) ERC20(name, symbol) {
+    constructor(string memory name, string memory symbol, uint256 initialSupply) ERC20(name, symbol) {
         _mint(msg.sender, initialSupply);
     }
-    
+
     function mint(address to, uint256 amount) public {
         _mint(to, amount);
     }
-    
+
     function burn(address from, uint256 amount) public {
         _burn(from, amount);
     }
@@ -156,15 +125,15 @@ contract FixedStakingRewardsTest is Test {
     MockERC20 public stakingToken;
     MockERC20 public otherToken;
     MockChainlinkAggregator public mockAggregator;
-    
+
     address public owner;
     address public user1;
     address public user2;
-    
+
     uint256 public constant INITIAL_REWARDS_SUPPLY = 10000e18;
     uint256 public constant INITIAL_STAKING_SUPPLY = 10000e18;
     uint256 public constant REWARDS_DURATION = 86400 * 14; // 14 days
-    
+
     event RewardAdded(uint256 reward);
     event Staked(address indexed user, uint256 amount);
     event Withdrawn(address indexed user, uint256 amount);
@@ -178,7 +147,7 @@ contract FixedStakingRewardsTest is Test {
         owner = address(this);
         user1 = makeAddr("user1");
         user2 = makeAddr("user2");
-        
+
         // Deploy tokens
         rewardsToken = new MockERC20("RewardsToken", "RT", INITIAL_REWARDS_SUPPLY);
         stakingToken = new MockERC20("StakingToken", "ST", INITIAL_STAKING_SUPPLY);
@@ -190,19 +159,15 @@ contract FixedStakingRewardsTest is Test {
         // assuming a 50c reward token rate
         mockAggregator.setDecimals(8);
         mockAggregator.setLatestAnswer(1e8 / 2, block.timestamp);
-        
+
         // Deploy staking contract
-        stakingRewards = new FixedStakingRewards(
-            owner,
-            address(rewardsToken),
-            address(stakingToken),
-            address(mockAggregator)
-        );
+        stakingRewards =
+            new FixedStakingRewards(owner, address(rewardsToken), address(stakingToken), address(mockAggregator));
 
         // setup token allowances so we dont have to do it later
         stakingToken.approve(address(stakingRewards), type(uint256).max);
         rewardsToken.approve(address(stakingRewards), type(uint256).max);
-        
+
         // Setup initial token distributions
         stakingToken.transfer(user1, 1000e18);
         stakingToken.transfer(user2, 1000e18);
@@ -219,20 +184,16 @@ contract FixedStakingRewardsTest is Test {
         assertEq(stakingRewards.rewardRate(), 0);
         assertEq(stakingRewards.name(), "FixedStakingRewards");
         assertEq(stakingRewards.symbol(), "FSR");
-        
+
         // Check rewardsAvailableDate is set to 1 year from deployment
         assertEq(stakingRewards.rewardsAvailableDate(), block.timestamp + 86400 * 365);
     }
 
     function test_Constructor_WithDifferentOwner() public {
         address newOwner = makeAddr("newOwner");
-        FixedStakingRewards newStaking = new FixedStakingRewards(
-            newOwner,
-            address(rewardsToken),
-            address(stakingToken),
-            address(mockAggregator)
-        );
-        
+        FixedStakingRewards newStaking =
+            new FixedStakingRewards(newOwner, address(rewardsToken), address(stakingToken), address(mockAggregator));
+
         assertEq(newStaking.owner(), newOwner);
     }
 
@@ -240,7 +201,7 @@ contract FixedStakingRewardsTest is Test {
                              VIEW FUNCTION TESTS
     //////////////////////////////////////////////////////////////*/
 
-    function test_RewardPerToken_WithZeroTotalSupply() public {
+    function test_RewardPerToken_WithZeroTotalSupply() public view {
         uint256 result = stakingRewards.rewardPerToken();
         assertEq(result, 0);
     }
@@ -249,22 +210,22 @@ contract FixedStakingRewardsTest is Test {
         // Set up rewards
         stakingRewards.setRewardYieldForYear(1e18);
         stakingRewards.supplyRewards(1000e18);
-        
+
         // User stakes
         vm.startPrank(user1);
         stakingToken.approve(address(stakingRewards), 100e18);
         stakingRewards.stake(100e18);
         vm.stopPrank();
-        
+
         // Move time forward
         skip(3600); // 1 hour
-        
+
         uint256 result = stakingRewards.rewardPerToken();
         uint256 expected = 100 * 3600 * (1e18 * 2 / uint256(365 days)) * 1e18 / 100e18; // timeElapsed * rewardRate * 1e18 / totalSupply
         assertEq(result, expected);
     }
 
-    function test_Earned_WithoutStaking() public {
+    function test_Earned_WithoutStaking() public view {
         uint256 result = stakingRewards.earned(user1);
         assertEq(result, 0);
     }
@@ -273,16 +234,16 @@ contract FixedStakingRewardsTest is Test {
         // Set up rewards
         stakingRewards.setRewardYieldForYear(1e18);
         stakingRewards.supplyRewards(1000e18);
-        
+
         // User stakes
         vm.startPrank(user1);
         stakingToken.approve(address(stakingRewards), 100e18);
         stakingRewards.stake(100e18);
         vm.stopPrank();
-        
+
         // Move time forward
         skip(3600); // 1 hour
-        
+
         uint256 result = stakingRewards.earned(user1);
         uint256 expected = 100 * 3600 * (1e18 * 2 / uint256(365 days)); // 100 tokens * 1 hour * 1 token per second / 0.5 token rate
         assertEq(result, expected);
@@ -301,19 +262,19 @@ contract FixedStakingRewardsTest is Test {
 
     function test_Stake_Success() public {
         uint256 amount = 100e18;
-        
+
         // Set up rewards so staking is allowed
         stakingRewards.setRewardYieldForYear(1e18);
         stakingRewards.supplyRewards(1000e18);
-        
+
         vm.startPrank(user1);
         stakingToken.approve(address(stakingRewards), amount);
-        
+
         vm.expectEmit(true, true, false, true);
         emit Staked(user1, amount);
-        
+
         stakingRewards.stake(amount);
-        
+
         assertEq(stakingRewards.balanceOf(user1), amount);
         assertEq(stakingRewards.totalSupply(), amount);
         assertEq(stakingToken.balanceOf(address(stakingRewards)), amount);
@@ -323,7 +284,7 @@ contract FixedStakingRewardsTest is Test {
     function test_Stake_RevertWhen_AmountIsZero() public {
         vm.startPrank(user1);
         stakingToken.approve(address(stakingRewards), 0);
-        
+
         vm.expectRevert(abi.encodeWithSelector(CannotStakeZero.selector));
         stakingRewards.stake(0);
         vm.stopPrank();
@@ -332,14 +293,14 @@ contract FixedStakingRewardsTest is Test {
     function test_Stake_RevertWhen_InsufficientRewards() public {
         stakingRewards.setRewardYieldForYear(1e18);
         stakingRewards.supplyRewards(1e18);
-        
+
         vm.startPrank(user1);
         stakingToken.approve(address(stakingRewards), 100e18);
-        
+
         uint256 available = 1e18;
         // rounding makes it hard so just put the value directly
         uint256 required = 7671232876648320000;
-        
+
         vm.expectRevert(abi.encodeWithSelector(NotEnoughRewards.selector, available, required));
         stakingRewards.stake(100e18);
         vm.stopPrank();
@@ -349,21 +310,21 @@ contract FixedStakingRewardsTest is Test {
         // Set up rewards
         stakingRewards.setRewardYieldForYear(1e18);
         stakingRewards.supplyRewards(1000e18);
-        
+
         // First stake
         vm.startPrank(user1);
         stakingToken.approve(address(stakingRewards), 100e18);
         stakingRewards.stake(100e18);
         vm.stopPrank();
-        
+
         // Move time forward
         skip(3600);
-        
+
         // Second stake should update rewards
         vm.startPrank(user1);
         stakingToken.approve(address(stakingRewards), 100e18);
         stakingRewards.stake(100e18);
-        
+
         uint256 rewards = stakingRewards.rewards(user1);
         assertGt(rewards, 0);
         vm.stopPrank();
@@ -377,12 +338,16 @@ contract FixedStakingRewardsTest is Test {
         // Set up staking first
         stakingRewards.setRewardYieldForYear(1e18);
         stakingRewards.supplyRewards(2000e18);
-        
+
         vm.startPrank(user1);
         stakingToken.approve(address(stakingRewards), 100e18);
         stakingRewards.stake(100e18);
-        
-        vm.expectRevert(abi.encodeWithSelector(RewardsNotAvailableYet.selector, block.timestamp, stakingRewards.rewardsAvailableDate()));
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                RewardsNotAvailableYet.selector, block.timestamp, stakingRewards.rewardsAvailableDate()
+            )
+        );
         stakingRewards.withdraw(50e18);
         vm.stopPrank();
     }
@@ -390,7 +355,7 @@ contract FixedStakingRewardsTest is Test {
     function test_Withdraw_RevertWhen_AmountIsZero() public {
         // Release rewards first
         stakingRewards.releaseRewards();
-        
+
         vm.startPrank(user1);
         vm.expectRevert(abi.encodeWithSelector(CannotWithdrawZero.selector));
         stakingRewards.withdraw(0);
@@ -401,24 +366,24 @@ contract FixedStakingRewardsTest is Test {
         // Set up staking first
         stakingRewards.setRewardYieldForYear(1e18);
         stakingRewards.supplyRewards(2000e18);
-        
+
         vm.startPrank(user1);
         stakingToken.approve(address(stakingRewards), 100e18);
         stakingRewards.stake(100e18);
         vm.stopPrank();
-        
+
         // Release rewards
         stakingRewards.releaseRewards();
-        
+
         uint256 withdrawAmount = 50e18;
         uint256 initialBalance = stakingToken.balanceOf(user1);
-        
+
         vm.startPrank(user1);
         vm.expectEmit(true, true, false, true);
         emit Withdrawn(user1, withdrawAmount);
-        
+
         stakingRewards.withdraw(withdrawAmount);
-        
+
         assertEq(stakingRewards.balanceOf(user1), 50e18);
         assertEq(stakingRewards.totalSupply(), 50e18);
         assertEq(stakingToken.balanceOf(user1), initialBalance + withdrawAmount);
@@ -429,15 +394,15 @@ contract FixedStakingRewardsTest is Test {
         // Set up staking first
         stakingRewards.setRewardYieldForYear(1e18);
         stakingRewards.supplyRewards(2000e18);
-        
+
         vm.startPrank(user1);
         stakingToken.approve(address(stakingRewards), 100e18);
         stakingRewards.stake(100e18);
         vm.stopPrank();
-        
+
         // Release rewards
         stakingRewards.releaseRewards();
-        
+
         vm.startPrank(user1);
         vm.expectRevert(abi.encodeWithSelector(IERC20Errors.ERC20InsufficientBalance.selector, user1, 100e18, 200e18));
         stakingRewards.withdraw(200e18);
@@ -450,7 +415,11 @@ contract FixedStakingRewardsTest is Test {
 
     function test_GetReward_RevertWhen_BeforeRewardsAvailableDate() public {
         vm.startPrank(user1);
-        vm.expectRevert(abi.encodeWithSelector(RewardsNotAvailableYet.selector, block.timestamp, stakingRewards.rewardsAvailableDate()));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                RewardsNotAvailableYet.selector, block.timestamp, stakingRewards.rewardsAvailableDate()
+            )
+        );
         stakingRewards.getReward();
         vm.stopPrank();
     }
@@ -458,7 +427,7 @@ contract FixedStakingRewardsTest is Test {
     function test_GetReward_WithNoRewards() public {
         // Release rewards
         stakingRewards.releaseRewards();
-        
+
         vm.startPrank(user1);
         stakingRewards.getReward(); // Should not revert, just do nothing
         vm.stopPrank();
@@ -468,27 +437,27 @@ contract FixedStakingRewardsTest is Test {
         // Set up staking and rewards
         stakingRewards.setRewardYieldForYear(1e18);
         stakingRewards.supplyRewards(1000e18);
-        
+
         vm.startPrank(user1);
         stakingToken.approve(address(stakingRewards), 100e18);
         stakingRewards.stake(100e18);
         vm.stopPrank();
-        
+
         // Move time forward to accumulate rewards
         skip(3600);
-        
+
         // Release rewards
         stakingRewards.releaseRewards();
-        
+
         uint256 expectedReward = stakingRewards.earned(user1);
         uint256 initialBalance = rewardsToken.balanceOf(user1);
-        
+
         vm.startPrank(user1);
         vm.expectEmit(true, true, false, true);
         emit RewardPaid(user1, expectedReward);
-        
+
         stakingRewards.getReward();
-        
+
         assertEq(stakingRewards.rewards(user1), 0);
         assertEq(rewardsToken.balanceOf(user1), initialBalance + expectedReward);
         vm.stopPrank();
@@ -502,26 +471,26 @@ contract FixedStakingRewardsTest is Test {
         // Set up staking and rewards
         stakingRewards.setRewardYieldForYear(1e18);
         stakingRewards.supplyRewards(1000e18);
-        
+
         vm.startPrank(user1);
         stakingToken.approve(address(stakingRewards), 100e18);
         stakingRewards.stake(100e18);
         vm.stopPrank();
-        
+
         // Move time forward to accumulate rewards
         skip(3600);
-        
+
         // Release rewards
         stakingRewards.releaseRewards();
-        
+
         uint256 expectedReward = stakingRewards.earned(user1);
         uint256 stakedAmount = stakingRewards.balanceOf(user1);
         uint256 initialStakingBalance = stakingToken.balanceOf(user1);
         uint256 initialRewardsBalance = rewardsToken.balanceOf(user1);
-        
+
         vm.startPrank(user1);
         stakingRewards.exit();
-        
+
         assertEq(stakingRewards.balanceOf(user1), 0);
         assertEq(stakingRewards.rewards(user1), 0);
         assertEq(stakingToken.balanceOf(user1), initialStakingBalance + stakedAmount);
@@ -535,9 +504,9 @@ contract FixedStakingRewardsTest is Test {
 
     function test_ReleaseRewards_Success() public {
         uint256 oldDate = stakingRewards.rewardsAvailableDate();
-        
+
         stakingRewards.releaseRewards();
-        
+
         assertEq(stakingRewards.rewardsAvailableDate(), block.timestamp);
         assertLt(stakingRewards.rewardsAvailableDate(), oldDate);
     }
@@ -551,9 +520,9 @@ contract FixedStakingRewardsTest is Test {
 
     function test_SetRewardRate_Success() public {
         uint256 newRate = 5e18;
-        
+
         stakingRewards.setRewardYieldForYear(newRate);
-        
+
         assertEq(stakingRewards.rewardRate(), newRate * 2 / 365 days);
     }
 
@@ -568,34 +537,34 @@ contract FixedStakingRewardsTest is Test {
         // Set initial reward rate and supply rewards
         stakingRewards.setRewardYieldForYear(1e18); // 1 token per year
         stakingRewards.supplyRewards(5000e18);
-        
+
         // User stakes
         vm.startPrank(user1);
         stakingToken.approve(address(stakingRewards), 300e18);
         stakingRewards.stake(300e18);
         vm.stopPrank();
-        
+
         // Move time forward by 1 hour (should earn at 1e18/year rate)
         skip(3600); // 1 hour
-        
+
         // Calculate expected rewards at old rate
         uint256 expectedRewardsOldRate = 300 * 3600 * (1e18 * 2 / uint256(365 days));
         uint256 earnedAfterFirstHour = stakingRewards.earned(user1);
         assertEq(earnedAfterFirstHour, expectedRewardsOldRate);
-        
+
         // Change reward rate to 2 tokens per year
         stakingRewards.setRewardYieldForYear(2e18);
-        
+
         // Verify rate changed
         assertEq(stakingRewards.rewardRate(), 2e18 * 2 / uint256(365 days));
-        
+
         // Move time forward by another hour (should earn at 2e18/year rate)
         skip(3600); // Another hour
-        
+
         // Calculate total expected rewards: 1 hour at old rate + 1 hour at new rate
         uint256 expectedRewardsNewRate = 300 * 3600 * (2e18 * 2 / uint256(365 days));
         uint256 totalExpectedRewards = expectedRewardsOldRate + expectedRewardsNewRate;
-        
+
         uint256 earnedAfterRateChange = stakingRewards.earned(user1);
         assertEq(earnedAfterRateChange, totalExpectedRewards);
 
@@ -628,12 +597,12 @@ contract FixedStakingRewardsTest is Test {
 
     function test_SupplyRewards_Success() public {
         stakingRewards.setRewardYieldForYear(1e18);
-        
+
         vm.expectEmit(true, false, false, true);
         emit RewardAdded(1000e18);
-        
+
         stakingRewards.supplyRewards(1000e18);
-        
+
         assertEq(stakingRewards.lastUpdateTime(), block.timestamp);
     }
 
@@ -647,14 +616,14 @@ contract FixedStakingRewardsTest is Test {
     function test_RecoverERC20_Success() public {
         uint256 amount = 100e18;
         otherToken.transfer(address(stakingRewards), amount);
-        
+
         uint256 initialBalance = otherToken.balanceOf(owner);
-        
+
         vm.expectEmit(true, false, false, true);
         emit Recovered(address(otherToken), amount);
-        
+
         stakingRewards.recoverERC20(address(otherToken), amount);
-        
+
         assertEq(otherToken.balanceOf(owner), initialBalance + amount);
     }
 
@@ -681,10 +650,10 @@ contract FixedStakingRewardsTest is Test {
         vm.stopPrank();
 
         vm.warp(block.timestamp + 1 days);
-        
+
         mockAggregator.setLatestAnswer(1e8, block.timestamp);
         stakingRewards.reclaim();
-        
+
         assertEq(rewardsToken.balanceOf(owner), initialBalance + amount);
         assertEq(rewardsToken.balanceOf(address(stakingRewards)), 0);
 
@@ -710,22 +679,22 @@ contract FixedStakingRewardsTest is Test {
         // Set target APY to 1 token per year
         uint256 targetApy = 1e18;
         stakingRewards.setRewardYieldForYear(targetApy);
-        
+
         // Verify initial state - aggregator is set to 0.5 (1e18 / 2) in setUp
         int256 initialRate = 1e18 / 2; // 0.5 tokens per USD
         uint256 expectedRewardRate = targetApy * 1e18 / uint256(initialRate) / 365 days;
         assertEq(stakingRewards.rewardRate(), expectedRewardRate);
-        
+
         // Change aggregator rate to 0.25 (token price doubled)
         mockAggregator.setLatestAnswer(1e8 / 4, block.timestamp);
-        
+
         // Call rebalance
         stakingRewards.rebalance();
-        
+
         // Verify reward rate updated correctly
         uint256 newExpectedRewardRate = targetApy * 1e18 / uint256(1e18 / 4) / 365 days;
         assertEq(stakingRewards.rewardRate(), newExpectedRewardRate);
-        
+
         // New rate should be double the original (since token price halved)
         assertApproxEqAbs(stakingRewards.rewardRate(), expectedRewardRate * 2, 10);
     }
@@ -734,22 +703,22 @@ contract FixedStakingRewardsTest is Test {
         // Set up staking scenario
         stakingRewards.setRewardYieldForYear(1e18);
         stakingRewards.supplyRewards(1000e18);
-        
+
         vm.startPrank(user1);
         stakingToken.approve(address(stakingRewards), 100e18);
         stakingRewards.stake(100e18);
         vm.stopPrank();
-        
+
         // Move time forward to accumulate rewards
         skip(3600); // 1 hour
-        
+
         uint256 earnedBefore = stakingRewards.earned(user1);
         assertGt(earnedBefore, 0);
-        
+
         // Change the aggregator rate and rebalance
         mockAggregator.setLatestAnswer(1e8, block.timestamp); // Rate changes from 0.5 to 1.0
         stakingRewards.rebalance();
-        
+
         // Rewards should be preserved due to updateReward modifier
         uint256 earnedAfter = stakingRewards.earned(user1);
         assertEq(earnedAfter, earnedBefore);
@@ -758,10 +727,10 @@ contract FixedStakingRewardsTest is Test {
     function test_Rebalance_WithZeroTargetApy() public {
         // Set target APY to 0
         stakingRewards.setRewardYieldForYear(0);
-        
+
         // Change aggregator rate
         mockAggregator.setLatestAnswer(1e8, block.timestamp);
-        
+
         // Rebalance should result in 0 reward rate
         stakingRewards.rebalance();
         assertEq(stakingRewards.rewardRate(), 0);
@@ -770,10 +739,10 @@ contract FixedStakingRewardsTest is Test {
     function test_Rebalance_RevertWhen_PriceFeedReturnsZero() public {
         // Set target APY
         stakingRewards.setRewardYieldForYear(1e18);
-        
+
         // Set aggregator to return zero rate
         mockAggregator.setLatestAnswer(0, block.timestamp);
-        
+
         // Rebalance should revert with InvalidPriceFeed
         vm.expectRevert(abi.encodeWithSelector(InvalidPriceFeed.selector, block.timestamp, int256(0)));
         stakingRewards.rebalance();
@@ -782,24 +751,24 @@ contract FixedStakingRewardsTest is Test {
     function test_Rebalance_RevertWhen_PriceFeedIsStale() public {
         // Set target APY
         stakingRewards.setRewardYieldForYear(1e18);
-        
-        // Set aggregator with stale data (2 hours old)
-        uint256 staleTimestamp = block.timestamp - 2 hours;
+
+        // Set aggregator with stale data (2 days old)
+        uint256 staleTimestamp = block.timestamp - 2 days;
         mockAggregator.setLatestAnswer(1e8 / 2, staleTimestamp);
-        
+
         // Rebalance should revert with InvalidPriceFeed
         vm.expectRevert(abi.encodeWithSelector(InvalidPriceFeed.selector, staleTimestamp, int256(1e8 / 2)));
         stakingRewards.rebalance();
     }
 
-    function test_Rebalance_RevertWhen_PriceFeedIsStaleExactly1Hour() public {
+    function test_Rebalance_RevertWhen_PriceFeedIsStaleExactly1Day1Hour() public {
         // Set target APY
         stakingRewards.setRewardYieldForYear(1e18);
-        
-        // Set aggregator with data exactly 1 hour old (should still revert)
-        uint256 staleTimestamp = block.timestamp - 1 hours - 1;
+
+        // Set aggregator with data exactly 1 day + 1 hour old (should still revert)
+        uint256 staleTimestamp = block.timestamp - 1 days - 1 hours - 1;
         mockAggregator.setLatestAnswer(1e8 / 2, staleTimestamp);
-        
+
         // Rebalance should revert with InvalidPriceFeed
         vm.expectRevert(abi.encodeWithSelector(InvalidPriceFeed.selector, staleTimestamp, int256(1e8 / 2)));
         stakingRewards.rebalance();
@@ -811,7 +780,7 @@ contract FixedStakingRewardsTest is Test {
 
     function test_UpdateReward_WithZeroAddress() public {
         stakingRewards.setRewardYieldForYear(1e18);
-        
+
         // This should work without reverting
         stakingRewards.supplyRewards(1000e18);
     }
@@ -820,20 +789,20 @@ contract FixedStakingRewardsTest is Test {
         stakingRewards.setRewardYieldForYear(1e18);
         stakingRewards.supplyRewards(1000e18);
         rewardsToken.transfer(address(stakingRewards), 2000e18);
-        
+
         vm.startPrank(user1);
         stakingToken.approve(address(stakingRewards), 100e18);
         stakingRewards.stake(100e18);
         vm.stopPrank();
-        
+
         // Move time forward
         skip(3600);
-        
+
         // Another action should update rewards
         vm.startPrank(user1);
         stakingToken.approve(address(stakingRewards), 100e18);
         stakingRewards.stake(100e18);
-        
+
         assertGt(stakingRewards.rewards(user1), 0);
         vm.stopPrank();
     }
@@ -845,18 +814,18 @@ contract FixedStakingRewardsTest is Test {
     function testFuzz_Stake_ValidAmounts(uint96 amount) public {
         // Bound to reasonable values
         amount = uint96(bound(amount, 1, 1000e18));
-        
+
         // Setup rewards
         stakingRewards.setRewardYieldForYear(1e18);
         rewardsToken.transfer(address(stakingRewards), 10000e18);
-        
+
         // Give user enough tokens
         stakingToken.mint(user1, amount);
-        
+
         vm.startPrank(user1);
         stakingToken.approve(address(stakingRewards), amount);
         stakingRewards.stake(amount);
-        
+
         assertEq(stakingRewards.balanceOf(user1), amount);
         vm.stopPrank();
     }
@@ -865,23 +834,23 @@ contract FixedStakingRewardsTest is Test {
         // Bound to reasonable values
         stakeAmount = uint96(bound(stakeAmount, 1, 1000e18));
         withdrawAmount = uint96(bound(withdrawAmount, 1, stakeAmount));
-        
+
         // Setup rewards and staking
         stakingRewards.setRewardYieldForYear(1e18);
         rewardsToken.transfer(address(stakingRewards), 10000e18);
         stakingToken.mint(user1, stakeAmount);
-        
+
         vm.startPrank(user1);
         stakingToken.approve(address(stakingRewards), stakeAmount);
         stakingRewards.stake(stakeAmount);
         vm.stopPrank();
-        
+
         // Release rewards
         stakingRewards.releaseRewards();
-        
+
         vm.startPrank(user1);
         stakingRewards.withdraw(withdrawAmount);
-        
+
         assertEq(stakingRewards.balanceOf(user1), stakeAmount - withdrawAmount);
         vm.stopPrank();
     }
@@ -889,9 +858,9 @@ contract FixedStakingRewardsTest is Test {
     function testFuzz_RewardRate_ValidRates(uint96 rate) public {
         // Bound to reasonable values (not too high to avoid overflow)
         rate = uint96(bound(rate, 1, 1000e18));
-        
+
         stakingRewards.setRewardYieldForYear(rate);
-        
+
         assertEq(stakingRewards.rewardRate(), rate * 2 / 365 days);
     }
 
@@ -904,28 +873,28 @@ contract FixedStakingRewardsTest is Test {
         stakingRewards.setRewardYieldForYear(1e18);
         stakingRewards.supplyRewards(1000e18);
         rewardsToken.transfer(address(stakingRewards), 5000e18);
-        
+
         // 2. User stakes
         vm.startPrank(user1);
         stakingToken.approve(address(stakingRewards), 100e18);
         stakingRewards.stake(100e18);
         vm.stopPrank();
-        
+
         // 3. Time passes
         skip(3600);
-        
+
         // 4. Check earned rewards
         uint256 earned = stakingRewards.earned(user1);
         assertEq(earned, 100 * 3600 * (1e18 * 2 / uint256(365 days)));
-        
+
         // 5. Release rewards
         stakingRewards.releaseRewards();
-        
+
         // 6. User exits
         vm.startPrank(user1);
         stakingRewards.exit();
         vm.stopPrank();
-        
+
         // 7. Verify final state
         assertEq(stakingRewards.balanceOf(user1), 0);
         assertEq(stakingRewards.rewards(user1), 0);
@@ -936,32 +905,32 @@ contract FixedStakingRewardsTest is Test {
         // Set up rewards
         stakingRewards.setRewardYieldForYear(2e18);
         stakingRewards.supplyRewards(1000e18);
-        
+
         // User1 stakes
         vm.startPrank(user1);
         stakingToken.approve(address(stakingRewards), 100e18);
         stakingRewards.stake(100e18);
         vm.stopPrank();
-        
+
         // Time passes
         skip(1800); // 30 minutes
-        
+
         // User2 stakes
         vm.startPrank(user2);
         stakingToken.approve(address(stakingRewards), 100e18);
         stakingRewards.stake(100e18);
         vm.stopPrank();
-        
+
         // More time passes
         skip(1800); // Another 30 minutes
-        
+
         // Check rewards
         uint256 user1Earned = stakingRewards.earned(user1);
         uint256 user2Earned = stakingRewards.earned(user2);
-        
+
         // User1 should have more rewards (staked earlier)
         assertGt(user1Earned, user2Earned);
-        
+
         // Total rewards should be reasonable
         assertApproxEqAbs(user1Earned + user2Earned, 100 * 3600 * 2e18 / uint256(365 days), 1e18);
     }
