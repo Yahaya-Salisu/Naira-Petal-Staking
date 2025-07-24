@@ -6,6 +6,7 @@ import {FixedStakingRewards} from "../src/FixedStakingRewards.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC20, IERC20Errors} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IChainlinkAggregator} from "../src/interfaces/IChainlinkAggregator.sol";
+import {console} from "forge-std/console.sol";
 
 // Import custom errors
 import {
@@ -330,6 +331,41 @@ contract FixedStakingRewardsTest is Test {
         vm.stopPrank();
     }
 
+    function test_Stake_TransferShareTokens_UpdatesRewards() public {
+        // Set up rewards
+        stakingRewards.setRewardYieldForYear(1e18);
+        stakingRewards.supplyRewards(1000e18);
+
+        uint256 rewardsPerHour = 2 * 100e18 * 3600 / uint256(365 days);
+
+        // User stakes
+        vm.startPrank(user1);
+        stakingToken.approve(address(stakingRewards), 100e18);
+        stakingRewards.stake(100e18);
+        vm.stopPrank();
+
+        // Move time forward
+        skip(3600);
+
+        uint256 user1Rewards = stakingRewards.earned(user1);
+        assertApproxEqAbs(user1Rewards, rewardsPerHour, 1000000, "first hour rewards");
+
+        // User transfers share tokens to user2
+        vm.startPrank(user1);
+        stakingRewards.transfer(user2, 50e18);
+        vm.stopPrank();
+
+        // Move time forward
+        skip(3600);
+
+        // Both user1 and user2 should be able to receive their corresponding rewards
+        user1Rewards = stakingRewards.earned(user1);
+        uint256 user2Rewards = stakingRewards.earned(user2);
+        assertApproxEqAbs(user1Rewards, rewardsPerHour + rewardsPerHour / 2, 1000000, "second hour rewards user1");
+        // half of the rewards because user2 only has half the shares for half of the time
+        assertApproxEqAbs(user2Rewards, rewardsPerHour / 2, 1000000, "second hour rewards user2");
+    }
+
     /*//////////////////////////////////////////////////////////////
                              WITHDRAWAL TESTS
     //////////////////////////////////////////////////////////////*/
@@ -388,6 +424,34 @@ contract FixedStakingRewardsTest is Test {
         assertEq(stakingRewards.totalSupply(), 50e18);
         assertEq(stakingToken.balanceOf(user1), initialBalance + withdrawAmount);
         vm.stopPrank();
+    }
+
+    function test_Withdraw_SuccessWhenRebalanceFails() public {
+        // Set up staking first
+        stakingRewards.setRewardYieldForYear(1e18);
+        stakingRewards.supplyRewards(2000e18);
+
+        vm.startPrank(user1);
+        stakingToken.approve(address(stakingRewards), 100e18);
+        stakingRewards.stake(100e18);
+        vm.stopPrank();
+
+        // Release rewards
+        stakingRewards.releaseRewards();
+
+        uint256 withdrawAmount = 50e18;
+        uint256 initialBalance = stakingToken.balanceOf(user1);
+
+        mockAggregator.setLatestRoundDataShouldRevert(true);
+
+        vm.startPrank(user1);
+        vm.expectEmit(true, true, false, true);
+        emit Withdrawn(user1, withdrawAmount);
+
+        stakingRewards.withdraw(withdrawAmount);
+
+        vm.expectRevert("latestRoundData reverted");
+        stakingRewards.rebalance();
     }
 
     function test_Withdraw_RevertWhen_InsufficientBalance() public {

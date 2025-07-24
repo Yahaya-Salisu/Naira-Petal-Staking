@@ -90,7 +90,7 @@ contract FixedStakingRewards is IStakingRewards, ERC20, ReentrancyGuard, Ownable
         }
         if (amount == 0) revert CannotWithdrawZero();
 
-        _rebalance();
+        try FixedStakingRewards(address(this)).rebalance() {} catch {}
 
         _burn(msg.sender, amount);
         stakingToken.safeTransfer(msg.sender, amount);
@@ -159,6 +159,10 @@ contract FixedStakingRewards is IStakingRewards, ERC20, ReentrancyGuard, Ownable
         }
         rewardRate = targetRewardApy * 1e18 / (uint256(currentRewardTokenRate) * 10 ** (18 - rewardsTokenRateDecimals))
             / 365 days;
+    }
+
+    function _update(address from, address to, uint256 value) internal override updateReward(from) updateReward(to) {
+        super._update(from, to, value);
     }
 
     /* ========== MODIFIERS ========== */
