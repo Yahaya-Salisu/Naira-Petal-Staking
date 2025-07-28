@@ -32,6 +32,19 @@ FixedStakingRewards is a staking contract that allows users to stake tokens and 
 - **Direct Control**: Owner has direct access to all administrative functions
 - **Reclaim Function**: Owner can recover previously supplied and unclaimed rewards with `reclaim()`
 
+### Whitelist Functionality
+
+- **Permissioned Access**: Only whitelisted addresses can stake tokens and withdraw/claim rewards
+- **Owner-Controlled**: Only owner can add/remove addresses from whitelist
+- **Simple Management**: Add or remove one address at a time with `addToWhitelist()` and `removeFromWhitelist()`
+- **Complete Access Control**: All user operations (stake, withdraw, getReward, exit) require whitelist approval
+
+### Emergency Controls
+
+- **Pausable**: Contract can be paused by owner to halt all user operations in emergencies
+- **Selective Pause**: Only user functions (stake, withdraw, getReward, exit) are paused - owner functions remain active
+- **Emergency Recovery**: Owner can still manage whitelist, rewards, and other admin functions while paused
+
 ## Usage
 
 ### Development Setup

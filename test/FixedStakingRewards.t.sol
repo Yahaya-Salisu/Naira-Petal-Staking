@@ -15,8 +15,11 @@ import {
     RewardsNotAvailableYet,
     CannotWithdrawZero,
     CannotWithdrawStakingToken,
-    InvalidPriceFeed
+    InvalidPriceFeed,
+    NotWhitelisted
 } from "../src/FixedStakingRewards.sol";
+
+import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 
 contract MockChainlinkAggregator is IChainlinkAggregator {
     uint80 public roundId = 0;
@@ -141,6 +144,10 @@ contract FixedStakingRewardsTest is Test {
     event RewardPaid(address indexed user, uint256 reward);
     event RewardsDurationUpdated(uint256 newDuration);
     event Recovered(address token, uint256 amount);
+    event WhitelistAdded(address indexed account);
+    event WhitelistRemoved(address indexed account);
+    event Paused(address account);
+    event Unpaused(address account);
 
     function setUp() public {
         vm.warp(1000000000);
@@ -212,6 +219,9 @@ contract FixedStakingRewardsTest is Test {
         stakingRewards.setRewardYieldForYear(1e18);
         stakingRewards.supplyRewards(1000e18);
 
+        // Add user to whitelist
+        stakingRewards.addToWhitelist(user1);
+
         // User stakes
         vm.startPrank(user1);
         stakingToken.approve(address(stakingRewards), 100e18);
@@ -235,6 +245,9 @@ contract FixedStakingRewardsTest is Test {
         // Set up rewards
         stakingRewards.setRewardYieldForYear(1e18);
         stakingRewards.supplyRewards(1000e18);
+
+        // Add user to whitelist
+        stakingRewards.addToWhitelist(user1);
 
         // User stakes
         vm.startPrank(user1);
@@ -268,6 +281,9 @@ contract FixedStakingRewardsTest is Test {
         stakingRewards.setRewardYieldForYear(1e18);
         stakingRewards.supplyRewards(1000e18);
 
+        // Add user to whitelist
+        stakingRewards.addToWhitelist(user1);
+
         vm.startPrank(user1);
         stakingToken.approve(address(stakingRewards), amount);
 
@@ -283,6 +299,9 @@ contract FixedStakingRewardsTest is Test {
     }
 
     function test_Stake_RevertWhen_AmountIsZero() public {
+        // Add user to whitelist first
+        stakingRewards.addToWhitelist(user1);
+
         vm.startPrank(user1);
         stakingToken.approve(address(stakingRewards), 0);
 
@@ -292,6 +311,9 @@ contract FixedStakingRewardsTest is Test {
     }
 
     function test_Stake_RevertWhen_InsufficientRewards() public {
+        // Add user to whitelist first
+        stakingRewards.addToWhitelist(user1);
+
         stakingRewards.setRewardYieldForYear(1e18);
         stakingRewards.supplyRewards(1e18);
 
@@ -311,6 +333,9 @@ contract FixedStakingRewardsTest is Test {
         // Set up rewards
         stakingRewards.setRewardYieldForYear(1e18);
         stakingRewards.supplyRewards(1000e18);
+
+        // Add user to whitelist
+        stakingRewards.addToWhitelist(user1);
 
         // First stake
         vm.startPrank(user1);
@@ -335,6 +360,9 @@ contract FixedStakingRewardsTest is Test {
         // Set up rewards
         stakingRewards.setRewardYieldForYear(1e18);
         stakingRewards.supplyRewards(1000e18);
+
+        // Add user to whitelist
+        stakingRewards.addToWhitelist(user1);
 
         uint256 rewardsPerHour = 2 * 100e18 * 3600 / uint256(365 days);
 
@@ -375,6 +403,9 @@ contract FixedStakingRewardsTest is Test {
         stakingRewards.setRewardYieldForYear(1e18);
         stakingRewards.supplyRewards(2000e18);
 
+        // Add user to whitelist
+        stakingRewards.addToWhitelist(user1);
+
         vm.startPrank(user1);
         stakingToken.approve(address(stakingRewards), 100e18);
         stakingRewards.stake(100e18);
@@ -389,8 +420,9 @@ contract FixedStakingRewardsTest is Test {
     }
 
     function test_Withdraw_RevertWhen_AmountIsZero() public {
-        // Release rewards first
+        // Release rewards and add user to whitelist first
         stakingRewards.releaseRewards();
+        stakingRewards.addToWhitelist(user1);
 
         vm.startPrank(user1);
         vm.expectRevert(abi.encodeWithSelector(CannotWithdrawZero.selector));
@@ -402,6 +434,9 @@ contract FixedStakingRewardsTest is Test {
         // Set up staking first
         stakingRewards.setRewardYieldForYear(1e18);
         stakingRewards.supplyRewards(2000e18);
+
+        // Add user to whitelist
+        stakingRewards.addToWhitelist(user1);
 
         vm.startPrank(user1);
         stakingToken.approve(address(stakingRewards), 100e18);
@@ -431,6 +466,9 @@ contract FixedStakingRewardsTest is Test {
         stakingRewards.setRewardYieldForYear(1e18);
         stakingRewards.supplyRewards(2000e18);
 
+        // Add user to whitelist
+        stakingRewards.addToWhitelist(user1);
+
         vm.startPrank(user1);
         stakingToken.approve(address(stakingRewards), 100e18);
         stakingRewards.stake(100e18);
@@ -459,6 +497,9 @@ contract FixedStakingRewardsTest is Test {
         stakingRewards.setRewardYieldForYear(1e18);
         stakingRewards.supplyRewards(2000e18);
 
+        // Add user to whitelist
+        stakingRewards.addToWhitelist(user1);
+
         vm.startPrank(user1);
         stakingToken.approve(address(stakingRewards), 100e18);
         stakingRewards.stake(100e18);
@@ -478,6 +519,9 @@ contract FixedStakingRewardsTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_GetReward_RevertWhen_BeforeRewardsAvailableDate() public {
+        // Add user to whitelist first
+        stakingRewards.addToWhitelist(user1);
+
         vm.startPrank(user1);
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -489,8 +533,9 @@ contract FixedStakingRewardsTest is Test {
     }
 
     function test_GetReward_WithNoRewards() public {
-        // Release rewards
+        // Release rewards and add user to whitelist
         stakingRewards.releaseRewards();
+        stakingRewards.addToWhitelist(user1);
 
         vm.startPrank(user1);
         stakingRewards.getReward(); // Should not revert, just do nothing
@@ -501,6 +546,9 @@ contract FixedStakingRewardsTest is Test {
         // Set up staking and rewards
         stakingRewards.setRewardYieldForYear(1e18);
         stakingRewards.supplyRewards(1000e18);
+
+        // Add user to whitelist
+        stakingRewards.addToWhitelist(user1);
 
         vm.startPrank(user1);
         stakingToken.approve(address(stakingRewards), 100e18);
@@ -535,6 +583,9 @@ contract FixedStakingRewardsTest is Test {
         // Set up staking and rewards
         stakingRewards.setRewardYieldForYear(1e18);
         stakingRewards.supplyRewards(1000e18);
+
+        // Add user to whitelist
+        stakingRewards.addToWhitelist(user1);
 
         vm.startPrank(user1);
         stakingToken.approve(address(stakingRewards), 100e18);
@@ -601,6 +652,9 @@ contract FixedStakingRewardsTest is Test {
         // Set initial reward rate and supply rewards
         stakingRewards.setRewardYieldForYear(1e18); // 1 token per year
         stakingRewards.supplyRewards(5000e18);
+
+        // Add user to whitelist
+        stakingRewards.addToWhitelist(user1);
 
         // User stakes
         vm.startPrank(user1);
@@ -708,6 +762,9 @@ contract FixedStakingRewardsTest is Test {
         stakingRewards.supplyRewards(amount);
         uint256 initialBalance = rewardsToken.balanceOf(owner);
 
+        // Add user to whitelist
+        stakingRewards.addToWhitelist(user1);
+
         vm.startPrank(user1);
         stakingToken.approve(address(stakingRewards), 100e18);
         stakingRewards.stake(100e18);
@@ -767,6 +824,9 @@ contract FixedStakingRewardsTest is Test {
         // Set up staking scenario
         stakingRewards.setRewardYieldForYear(1e18);
         stakingRewards.supplyRewards(1000e18);
+
+        // Add user to whitelist
+        stakingRewards.addToWhitelist(user1);
 
         vm.startPrank(user1);
         stakingToken.approve(address(stakingRewards), 100e18);
@@ -854,6 +914,9 @@ contract FixedStakingRewardsTest is Test {
         stakingRewards.supplyRewards(1000e18);
         rewardsToken.transfer(address(stakingRewards), 2000e18);
 
+        // Add user to whitelist
+        stakingRewards.addToWhitelist(user1);
+
         vm.startPrank(user1);
         stakingToken.approve(address(stakingRewards), 100e18);
         stakingRewards.stake(100e18);
@@ -886,6 +949,9 @@ contract FixedStakingRewardsTest is Test {
         // Give user enough tokens
         stakingToken.mint(user1, amount);
 
+        // Add user to whitelist
+        stakingRewards.addToWhitelist(user1);
+
         vm.startPrank(user1);
         stakingToken.approve(address(stakingRewards), amount);
         stakingRewards.stake(amount);
@@ -903,6 +969,9 @@ contract FixedStakingRewardsTest is Test {
         stakingRewards.setRewardYieldForYear(1e18);
         rewardsToken.transfer(address(stakingRewards), 10000e18);
         stakingToken.mint(user1, stakeAmount);
+
+        // Add user to whitelist
+        stakingRewards.addToWhitelist(user1);
 
         vm.startPrank(user1);
         stakingToken.approve(address(stakingRewards), stakeAmount);
@@ -938,28 +1007,31 @@ contract FixedStakingRewardsTest is Test {
         stakingRewards.supplyRewards(1000e18);
         rewardsToken.transfer(address(stakingRewards), 5000e18);
 
-        // 2. User stakes
+        // 2. Add user to whitelist
+        stakingRewards.addToWhitelist(user1);
+
+        // 3. User stakes
         vm.startPrank(user1);
         stakingToken.approve(address(stakingRewards), 100e18);
         stakingRewards.stake(100e18);
         vm.stopPrank();
 
-        // 3. Time passes
+        // 4. Time passes
         skip(3600);
 
-        // 4. Check earned rewards
+        // 5. Check earned rewards
         uint256 earned = stakingRewards.earned(user1);
         assertEq(earned, 100 * 3600 * (1e18 * 2 / uint256(365 days)));
 
-        // 5. Release rewards
+        // 6. Release rewards
         stakingRewards.releaseRewards();
 
-        // 6. User exits
+        // 7. User exits
         vm.startPrank(user1);
         stakingRewards.exit();
         vm.stopPrank();
 
-        // 7. Verify final state
+        // 8. Verify final state
         assertEq(stakingRewards.balanceOf(user1), 0);
         assertEq(stakingRewards.rewards(user1), 0);
         assertEq(rewardsToken.balanceOf(user1), earned);
@@ -969,6 +1041,10 @@ contract FixedStakingRewardsTest is Test {
         // Set up rewards
         stakingRewards.setRewardYieldForYear(2e18);
         stakingRewards.supplyRewards(1000e18);
+
+        // Add users to whitelist
+        stakingRewards.addToWhitelist(user1);
+        stakingRewards.addToWhitelist(user2);
 
         // User1 stakes
         vm.startPrank(user1);
@@ -997,5 +1073,421 @@ contract FixedStakingRewardsTest is Test {
 
         // Total rewards should be reasonable
         assertApproxEqAbs(user1Earned + user2Earned, 100 * 3600 * 2e18 / uint256(365 days), 1e18);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                             WHITELIST TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_Whitelist_InitialState() public view {
+        // Initially no addresses should be whitelisted
+        assertFalse(stakingRewards.isWhitelisted(user1));
+        assertFalse(stakingRewards.isWhitelisted(user2));
+        assertFalse(stakingRewards.isWhitelisted(owner));
+    }
+
+    function test_AddToWhitelist_Success() public {
+        vm.expectEmit(true, false, false, true);
+        emit WhitelistAdded(user1);
+
+        stakingRewards.addToWhitelist(user1);
+
+        assertTrue(stakingRewards.isWhitelisted(user1));
+        assertFalse(stakingRewards.isWhitelisted(user2));
+    }
+
+    function test_AddToWhitelist_RevertWhen_NotOwner() public {
+        vm.startPrank(user1);
+        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", user1));
+        stakingRewards.addToWhitelist(user2);
+        vm.stopPrank();
+    }
+
+    function test_RemoveFromWhitelist_Success() public {
+        // First add to whitelist
+        stakingRewards.addToWhitelist(user1);
+        assertTrue(stakingRewards.isWhitelisted(user1));
+
+        vm.expectEmit(true, false, false, true);
+        emit WhitelistRemoved(user1);
+
+        stakingRewards.removeFromWhitelist(user1);
+
+        assertFalse(stakingRewards.isWhitelisted(user1));
+    }
+
+    function test_RemoveFromWhitelist_RevertWhen_NotOwner() public {
+        stakingRewards.addToWhitelist(user1);
+
+        vm.startPrank(user1);
+        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", user1));
+        stakingRewards.removeFromWhitelist(user1);
+        vm.stopPrank();
+    }
+
+    function test_Stake_RevertWhen_NotWhitelisted() public {
+        // Set up rewards
+        stakingRewards.setRewardYieldForYear(1e18);
+        stakingRewards.supplyRewards(1000e18);
+
+        vm.startPrank(user1);
+        stakingToken.approve(address(stakingRewards), 100e18);
+
+        vm.expectRevert(abi.encodeWithSelector(NotWhitelisted.selector, user1));
+        stakingRewards.stake(100e18);
+        vm.stopPrank();
+    }
+
+    function test_Stake_SuccessWhen_Whitelisted() public {
+        // Set up rewards
+        stakingRewards.setRewardYieldForYear(1e18);
+        stakingRewards.supplyRewards(1000e18);
+
+        // Add user to whitelist
+        stakingRewards.addToWhitelist(user1);
+
+        vm.startPrank(user1);
+        stakingToken.approve(address(stakingRewards), 100e18);
+
+        vm.expectEmit(true, true, false, true);
+        emit Staked(user1, 100e18);
+
+        stakingRewards.stake(100e18);
+
+        assertEq(stakingRewards.balanceOf(user1), 100e18);
+        vm.stopPrank();
+    }
+
+    function test_Stake_OnlyWhitelistedUsersCanStake() public {
+        // Set up rewards
+        stakingRewards.setRewardYieldForYear(1e18);
+        stakingRewards.supplyRewards(1000e18);
+
+        // Add only user1 to whitelist
+        stakingRewards.addToWhitelist(user1);
+
+        // user1 can stake
+        vm.startPrank(user1);
+        stakingToken.approve(address(stakingRewards), 100e18);
+        stakingRewards.stake(100e18);
+        vm.stopPrank();
+
+        // user2 cannot stake
+        vm.startPrank(user2);
+        stakingToken.approve(address(stakingRewards), 100e18);
+        vm.expectRevert(abi.encodeWithSelector(NotWhitelisted.selector, user2));
+        stakingRewards.stake(100e18);
+        vm.stopPrank();
+
+        assertEq(stakingRewards.balanceOf(user1), 100e18);
+        assertEq(stakingRewards.balanceOf(user2), 0);
+    }
+
+    function test_WithdrawAndGetReward_WorkAfterWhitelistRemoval() public {
+        // Set up rewards and whitelist user
+        stakingRewards.setRewardYieldForYear(1e18);
+        stakingRewards.supplyRewards(1000e18);
+        stakingRewards.addToWhitelist(user1);
+
+        // User stakes
+        vm.startPrank(user1);
+        stakingToken.approve(address(stakingRewards), 100e18);
+        stakingRewards.stake(100e18);
+        vm.stopPrank();
+
+        // Move time forward and release rewards
+        skip(3600);
+        stakingRewards.releaseRewards();
+
+        // User should be able to withdraw and get rewards while still whitelisted
+        vm.startPrank(user1);
+        stakingRewards.withdraw(50e18);
+        stakingRewards.getReward();
+        vm.stopPrank();
+
+        assertEq(stakingRewards.balanceOf(user1), 50e18);
+        assertGt(rewardsToken.balanceOf(user1), 0);
+    }
+
+    function test_Withdraw_RevertWhen_NotWhitelisted() public {
+        // Set up staking first (user needs to be whitelisted to stake)
+        stakingRewards.setRewardYieldForYear(1e18);
+        stakingRewards.supplyRewards(2000e18);
+        stakingRewards.addToWhitelist(user1);
+
+        vm.startPrank(user1);
+        stakingToken.approve(address(stakingRewards), 100e18);
+        stakingRewards.stake(100e18);
+        vm.stopPrank();
+
+        // Remove user from whitelist and release rewards
+        stakingRewards.removeFromWhitelist(user1);
+        stakingRewards.releaseRewards();
+
+        // User should not be able to withdraw after being removed from whitelist
+        vm.startPrank(user1);
+        vm.expectRevert(abi.encodeWithSelector(NotWhitelisted.selector, user1));
+        stakingRewards.withdraw(50e18);
+        vm.stopPrank();
+    }
+
+    function test_GetReward_RevertWhen_NotWhitelisted() public {
+        // Set up staking and rewards first
+        stakingRewards.setRewardYieldForYear(1e18);
+        stakingRewards.supplyRewards(1000e18);
+        stakingRewards.addToWhitelist(user1);
+
+        vm.startPrank(user1);
+        stakingToken.approve(address(stakingRewards), 100e18);
+        stakingRewards.stake(100e18);
+        vm.stopPrank();
+
+        // Move time forward and release rewards
+        skip(3600);
+        stakingRewards.releaseRewards();
+
+        // Remove user from whitelist
+        stakingRewards.removeFromWhitelist(user1);
+
+        // User should not be able to get rewards after being removed from whitelist
+        vm.startPrank(user1);
+        vm.expectRevert(abi.encodeWithSelector(NotWhitelisted.selector, user1));
+        stakingRewards.getReward();
+        vm.stopPrank();
+    }
+
+    function test_Exit_RevertWhen_NotWhitelisted() public {
+        // Set up staking first
+        stakingRewards.setRewardYieldForYear(1e18);
+        stakingRewards.supplyRewards(1000e18);
+        stakingRewards.addToWhitelist(user1);
+
+        vm.startPrank(user1);
+        stakingToken.approve(address(stakingRewards), 100e18);
+        stakingRewards.stake(100e18);
+        vm.stopPrank();
+
+        // Release rewards and remove from whitelist
+        stakingRewards.releaseRewards();
+        stakingRewards.removeFromWhitelist(user1);
+
+        // User should not be able to exit after being removed from whitelist
+        vm.startPrank(user1);
+        vm.expectRevert(abi.encodeWithSelector(NotWhitelisted.selector, user1));
+        stakingRewards.exit();
+        vm.stopPrank();
+    }
+
+    function test_Integration_WhitelistFlow() public {
+        // 1. Set up rewards
+        stakingRewards.setRewardYieldForYear(1e18);
+        stakingRewards.supplyRewards(1000e18);
+
+        // 2. Add user to whitelist
+        stakingRewards.addToWhitelist(user1);
+
+        // 3. User stakes
+        vm.startPrank(user1);
+        stakingToken.approve(address(stakingRewards), 100e18);
+        stakingRewards.stake(100e18);
+        vm.stopPrank();
+
+        // 4. Remove user from whitelist
+        stakingRewards.removeFromWhitelist(user1);
+
+        // 5. User cannot stake more
+        vm.startPrank(user1);
+        stakingToken.approve(address(stakingRewards), 100e18);
+        vm.expectRevert(abi.encodeWithSelector(NotWhitelisted.selector, user1));
+        stakingRewards.stake(100e18);
+        vm.stopPrank();
+
+        // 6. Re-add user to whitelist
+        stakingRewards.addToWhitelist(user1);
+
+        // 7. User can stake again
+        vm.startPrank(user1);
+        stakingRewards.stake(100e18);
+        vm.stopPrank();
+
+        assertEq(stakingRewards.balanceOf(user1), 200e18);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                             PAUSE TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_Pause_InitialState() public view {
+        // Contract should not be paused initially
+        assertFalse(stakingRewards.paused());
+    }
+
+    function test_Pause_Success() public {
+        vm.expectEmit(true, false, false, true);
+        emit Paused(owner);
+
+        stakingRewards.pause();
+
+        assertTrue(stakingRewards.paused());
+    }
+
+    function test_Pause_RevertWhen_NotOwner() public {
+        vm.startPrank(user1);
+        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", user1));
+        stakingRewards.pause();
+        vm.stopPrank();
+    }
+
+    function test_Unpause_Success() public {
+        // First pause
+        stakingRewards.pause();
+        assertTrue(stakingRewards.paused());
+
+        vm.expectEmit(true, false, false, true);
+        emit Unpaused(owner);
+
+        stakingRewards.unpause();
+
+        assertFalse(stakingRewards.paused());
+    }
+
+    function test_Unpause_RevertWhen_NotOwner() public {
+        stakingRewards.pause();
+
+        vm.startPrank(user1);
+        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", user1));
+        stakingRewards.unpause();
+        vm.stopPrank();
+    }
+
+    function test_Stake_RevertWhen_Paused() public {
+        // Set up rewards and whitelist
+        stakingRewards.setRewardYieldForYear(1e18);
+        stakingRewards.supplyRewards(1000e18);
+        stakingRewards.addToWhitelist(user1);
+
+        // Pause the contract
+        stakingRewards.pause();
+
+        vm.startPrank(user1);
+        stakingToken.approve(address(stakingRewards), 100e18);
+
+        vm.expectRevert(abi.encodeWithSelector(Pausable.EnforcedPause.selector));
+        stakingRewards.stake(100e18);
+        vm.stopPrank();
+    }
+
+    function test_Withdraw_RevertWhen_Paused() public {
+        // Set up staking first
+        stakingRewards.setRewardYieldForYear(1e18);
+        stakingRewards.supplyRewards(2000e18);
+        stakingRewards.addToWhitelist(user1);
+
+        vm.startPrank(user1);
+        stakingToken.approve(address(stakingRewards), 100e18);
+        stakingRewards.stake(100e18);
+        vm.stopPrank();
+
+        // Release rewards and pause
+        stakingRewards.releaseRewards();
+        stakingRewards.pause();
+
+        vm.startPrank(user1);
+        vm.expectRevert(abi.encodeWithSelector(Pausable.EnforcedPause.selector));
+        stakingRewards.withdraw(50e18);
+        vm.stopPrank();
+    }
+
+    function test_GetReward_RevertWhen_Paused() public {
+        // Set up staking and rewards
+        stakingRewards.setRewardYieldForYear(1e18);
+        stakingRewards.supplyRewards(1000e18);
+        stakingRewards.addToWhitelist(user1);
+
+        vm.startPrank(user1);
+        stakingToken.approve(address(stakingRewards), 100e18);
+        stakingRewards.stake(100e18);
+        vm.stopPrank();
+
+        // Move time forward and release rewards
+        skip(3600);
+        stakingRewards.releaseRewards();
+
+        // Pause the contract
+        stakingRewards.pause();
+
+        vm.startPrank(user1);
+        vm.expectRevert(abi.encodeWithSelector(Pausable.EnforcedPause.selector));
+        stakingRewards.getReward();
+        vm.stopPrank();
+    }
+
+    function test_Exit_RevertWhen_Paused() public {
+        // Set up staking first
+        stakingRewards.setRewardYieldForYear(1e18);
+        stakingRewards.supplyRewards(1000e18);
+        stakingRewards.addToWhitelist(user1);
+
+        vm.startPrank(user1);
+        stakingToken.approve(address(stakingRewards), 100e18);
+        stakingRewards.stake(100e18);
+        vm.stopPrank();
+
+        // Release rewards and pause
+        stakingRewards.releaseRewards();
+        stakingRewards.pause();
+
+        vm.startPrank(user1);
+        vm.expectRevert(abi.encodeWithSelector(Pausable.EnforcedPause.selector));
+        stakingRewards.exit();
+        vm.stopPrank();
+    }
+
+    function test_OwnerFunctions_WorkWhen_Paused() public {
+        // Owner functions should still work when paused
+        stakingRewards.pause();
+
+        // These should all work
+        stakingRewards.addToWhitelist(user1);
+        stakingRewards.removeFromWhitelist(user1);
+        stakingRewards.setRewardYieldForYear(1e18);
+        stakingRewards.supplyRewards(100e18);
+        stakingRewards.releaseRewards();
+
+        assertTrue(stakingRewards.paused());
+    }
+
+    function test_Integration_PauseUnpauseFlow() public {
+        // 1. Set up rewards and whitelist
+        stakingRewards.setRewardYieldForYear(1e18);
+        stakingRewards.supplyRewards(1000e18);
+        stakingRewards.addToWhitelist(user1);
+
+        // 2. User stakes successfully
+        vm.startPrank(user1);
+        stakingToken.approve(address(stakingRewards), 100e18);
+        stakingRewards.stake(100e18);
+        vm.stopPrank();
+
+        // 3. Pause contract
+        stakingRewards.pause();
+
+        // 4. User cannot stake more
+        vm.startPrank(user1);
+        stakingToken.approve(address(stakingRewards), 100e18);
+        vm.expectRevert(abi.encodeWithSelector(Pausable.EnforcedPause.selector));
+        stakingRewards.stake(100e18);
+        vm.stopPrank();
+
+        // 5. Unpause contract
+        stakingRewards.unpause();
+
+        // 6. User can stake again
+        vm.startPrank(user1);
+        stakingRewards.stake(100e18);
+        vm.stopPrank();
+
+        assertEq(stakingRewards.balanceOf(user1), 200e18);
+        assertFalse(stakingRewards.paused());
     }
 }

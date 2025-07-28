@@ -18,8 +18,9 @@ error RewardsNotAvailableYet(uint256 currentTime, uint256 availableTime);
 error CannotWithdrawZero();
 error CannotWithdrawStakingToken(address attemptedToken);
 error InvalidPriceFeed(uint256 updateTime, int256 currentRewardTokenRate);
+error NotWhitelisted(address account);
 
-contract FixedStakingRewards is IStakingRewards, ERC20, ReentrancyGuard, Ownable {
+contract FixedStakingRewards is IStakingRewards, ERC20Pausable, ReentrancyGuard, Ownable {
     using SafeERC20 for IERC20;
 
     /* ========== STATE VARIABLES ========== */
@@ -36,6 +37,7 @@ contract FixedStakingRewards is IStakingRewards, ERC20, ReentrancyGuard, Ownable
 
     mapping(address => uint256) public userRewardPerTokenPaid;
     mapping(address => uint256) public rewards;
+    mapping(address => bool) public whitelist;
 
     /* ========== CONSTRUCTOR ========== */
 
@@ -67,9 +69,20 @@ contract FixedStakingRewards is IStakingRewards, ERC20, ReentrancyGuard, Ownable
         return rewardRate * 14 days;
     }
 
+    function isWhitelisted(address account) public view returns (bool) {
+        return whitelist[account];
+    }
+
     /* ========== MUTATIVE FUNCTIONS ========== */
 
-    function stake(uint256 amount) external override nonReentrant updateReward(msg.sender) {
+    function stake(uint256 amount)
+        external
+        override
+        nonReentrant
+        updateReward(msg.sender)
+        onlyWhitelisted
+        whenNotPaused
+    {
         if (amount == 0) revert CannotStakeZero();
 
         _rebalance();
@@ -84,7 +97,14 @@ contract FixedStakingRewards is IStakingRewards, ERC20, ReentrancyGuard, Ownable
         emit Staked(msg.sender, amount);
     }
 
-    function withdraw(uint256 amount) public override nonReentrant updateReward(msg.sender) {
+    function withdraw(uint256 amount)
+        public
+        override
+        nonReentrant
+        updateReward(msg.sender)
+        onlyWhitelisted
+        whenNotPaused
+    {
         if (block.timestamp < rewardsAvailableDate) {
             revert RewardsNotAvailableYet(block.timestamp, rewardsAvailableDate);
         }
@@ -97,7 +117,7 @@ contract FixedStakingRewards is IStakingRewards, ERC20, ReentrancyGuard, Ownable
         emit Withdrawn(msg.sender, amount);
     }
 
-    function getReward() public override nonReentrant updateReward(msg.sender) {
+    function getReward() public override nonReentrant updateReward(msg.sender) onlyWhitelisted whenNotPaused {
         if (block.timestamp < rewardsAvailableDate) {
             revert RewardsNotAvailableYet(block.timestamp, rewardsAvailableDate);
         }
@@ -109,7 +129,7 @@ contract FixedStakingRewards is IStakingRewards, ERC20, ReentrancyGuard, Ownable
         }
     }
 
-    function exit() external override {
+    function exit() external override onlyWhitelisted whenNotPaused {
         withdraw(balanceOf(msg.sender));
         getReward();
     }
@@ -151,6 +171,24 @@ contract FixedStakingRewards is IStakingRewards, ERC20, ReentrancyGuard, Ownable
         emit Recovered(tokenAddress, tokenAmount);
     }
 
+    function addToWhitelist(address account) external onlyOwner {
+        whitelist[account] = true;
+        emit WhitelistAdded(account);
+    }
+
+    function removeFromWhitelist(address account) external onlyOwner {
+        whitelist[account] = false;
+        emit WhitelistRemoved(account);
+    }
+
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    function unpause() external onlyOwner {
+        _unpause();
+    }
+
     /* ========== INTERNAL FUNCTIONS ========== */
     function _rebalance() internal {
         (, int256 currentRewardTokenRate,, uint256 updateTime,) = rewardsTokenRateAggregator.latestRoundData();
@@ -177,6 +215,13 @@ contract FixedStakingRewards is IStakingRewards, ERC20, ReentrancyGuard, Ownable
         _;
     }
 
+    modifier onlyWhitelisted() {
+        if (!whitelist[msg.sender]) {
+            revert NotWhitelisted(msg.sender);
+        }
+        _;
+    }
+
     /* ========== EVENTS ========== */
 
     event RewardAdded(uint256 reward);
@@ -186,4 +231,6 @@ contract FixedStakingRewards is IStakingRewards, ERC20, ReentrancyGuard, Ownable
     event Recovered(address token, uint256 amount);
     event RewardsMadeAvailable(uint256 timestampAvailable);
     event RewardYieldSet(uint256 apy);
+    event WhitelistAdded(address indexed account);
+    event WhitelistRemoved(address indexed account);
 }
