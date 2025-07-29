@@ -1,5 +1,5 @@
 name = "fixed-staking-rewards"
-version = "1.0.1"
+version = "1.0.2"
 description = "Fixed staking rewards contract for ERC20 tokens"
 
 [var.main]
