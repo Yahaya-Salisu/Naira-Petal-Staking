@@ -15,8 +15,8 @@ import "./interfaces/IChainlinkAggregator.sol";
 error CannotStakeZero();
 error NotEnoughRewards(uint256 available, uint256 required);
 error RewardsNotAvailableYet(uint256 currentTime, uint256 availableTime);
-error CannotWithdrawZero();
-error CannotWithdrawStakingToken(address attemptedToken);
+error CannotunstakeZero();
+error CannotunstakeStakingToken(address attemptedToken);
 error InvalidPriceFeed(uint256 updateTime, int256 currentRewardTokenRate);
 error NotWhitelisted(address account);
 
@@ -97,7 +97,7 @@ contract NairaPetalStaking is INairaPetalStaking, ERC20Pausable, ReentrancyGuard
         emit Staked(msg.sender, amount);
     }
 
-    function withdraw(uint256 amount)
+    function unstake(uint256 amount)
         public
         override
         nonReentrant
@@ -108,13 +108,13 @@ contract NairaPetalStaking is INairaPetalStaking, ERC20Pausable, ReentrancyGuard
         if (block.timestamp < rewardsAvailableDate) {
             revert RewardsNotAvailableYet(block.timestamp, rewardsAvailableDate);
         }
-        if (amount == 0) revert CannotWithdrawZero();
+        if (amount == 0) revert CannotunstakeZero();
 
         try NairaPetalStaking(address(this)).rebalance() {} catch {}
 
         _burn(msg.sender, amount);
         stakingToken.safeTransfer(msg.sender, amount);
-        emit Withdrawn(msg.sender, amount);
+        emit Unstaked(msg.sender, amount);
     }
 
     function getReward() public override nonReentrant updateReward(msg.sender) onlyWhitelisted whenNotPaused {
@@ -130,7 +130,7 @@ contract NairaPetalStaking is INairaPetalStaking, ERC20Pausable, ReentrancyGuard
     }
 
     function exit() external override onlyWhitelisted whenNotPaused {
-        withdraw(balanceOf(msg.sender));
+        unstake(balanceOf(msg.sender));
         getReward();
     }
 
@@ -166,7 +166,7 @@ contract NairaPetalStaking is INairaPetalStaking, ERC20Pausable, ReentrancyGuard
 
     // Added to support recovering LP Rewards from other systems such as BAL to be distributed to holders
     function recoverERC20(address tokenAddress, uint256 tokenAmount) external onlyOwner {
-        if (tokenAddress == address(stakingToken)) revert CannotWithdrawStakingToken(tokenAddress);
+        if (tokenAddress == address(stakingToken)) revert CannotunstakeStakingToken(tokenAddress);
         IERC20(tokenAddress).safeTransfer(owner(), tokenAmount);
         emit Recovered(tokenAddress, tokenAmount);
     }
@@ -226,7 +226,7 @@ contract NairaPetalStaking is INairaPetalStaking, ERC20Pausable, ReentrancyGuard
 
     event RewardAdded(uint256 reward);
     event Staked(address indexed user, uint256 amount);
-    event Withdrawn(address indexed user, uint256 amount);
+    event Unstaked(address indexed user, uint256 amount);
     event RewardPaid(address indexed user, uint256 reward);
     event Recovered(address token, uint256 amount);
     event RewardsMadeAvailable(uint256 timestampAvailable);

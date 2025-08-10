@@ -13,8 +13,8 @@ import {
     CannotStakeZero,
     NotEnoughRewards,
     RewardsNotAvailableYet,
-    CannotWithdrawZero,
-    CannotWithdrawStakingToken,
+    CannotunstakeZero,
+    CannotunstakeStakingToken,
     InvalidPriceFeed,
     NotWhitelisted
 } from "../src/NairaPetalStaking.sol";
@@ -140,7 +140,7 @@ contract NairaPetalStakingTest is Test {
 
     event RewardAdded(uint256 reward);
     event Staked(address indexed user, uint256 amount);
-    event Withdrawn(address indexed user, uint256 amount);
+    event Unstaked(address indexed user, uint256 amount);
     event RewardPaid(address indexed user, uint256 reward);
     event RewardsDurationUpdated(uint256 newDuration);
     event Recovered(address token, uint256 amount);
@@ -395,10 +395,10 @@ contract NairaPetalStakingTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-                             WITHDRAWAL TESTS
+                             unstakeAL TESTS
     //////////////////////////////////////////////////////////////*/
 
-    function test_Withdraw_RevertWhen_BeforeRewardsAvailableDate() public {
+    function test_unstake_RevertWhen_BeforeRewardsAvailableDate() public {
         // Set up staking first
         nairaPetalStaking.setRewardYieldForYear(1e18);
         nairaPetalStaking.supplyRewards(2000e18);
@@ -415,22 +415,22 @@ contract NairaPetalStakingTest is Test {
                 RewardsNotAvailableYet.selector, block.timestamp, nairaPetalStaking.rewardsAvailableDate()
             )
         );
-        nairaPetalStaking.withdraw(50e18);
+        nairaPetalStaking.unstake(50e18);
         vm.stopPrank();
     }
 
-    function test_Withdraw_RevertWhen_AmountIsZero() public {
+    function test_unstake_RevertWhen_AmountIsZero() public {
         // Release rewards and add user to whitelist first
         nairaPetalStaking.releaseRewards();
         nairaPetalStaking.addToWhitelist(user1);
 
         vm.startPrank(user1);
-        vm.expectRevert(abi.encodeWithSelector(CannotWithdrawZero.selector));
-        nairaPetalStaking.withdraw(0);
+        vm.expectRevert(abi.encodeWithSelector(CannotunstakeZero.selector));
+        nairaPetalStaking.unstake(0);
         vm.stopPrank();
     }
 
-    function test_Withdraw_Success() public {
+    function test_unstake_Success() public {
         // Set up staking first
         nairaPetalStaking.setRewardYieldForYear(1e18);
         nairaPetalStaking.supplyRewards(2000e18);
@@ -446,22 +446,22 @@ contract NairaPetalStakingTest is Test {
         // Release rewards
         nairaPetalStaking.releaseRewards();
 
-        uint256 withdrawAmount = 50e18;
+        uint256 unstakeAmount = 50e18;
         uint256 initialBalance = stakingToken.balanceOf(user1);
 
         vm.startPrank(user1);
         vm.expectEmit(true, true, false, true);
-        emit Withdrawn(user1, withdrawAmount);
+        emit Unstaked(user1, unstakeAmount);
 
-        nairaPetalStaking.withdraw(withdrawAmount);
+        nairaPetalStaking.unstake(unstakeAmount);
 
         assertEq(nairaPetalStaking.balanceOf(user1), 50e18);
         assertEq(nairaPetalStaking.totalSupply(), 50e18);
-        assertEq(stakingToken.balanceOf(user1), initialBalance + withdrawAmount);
+        assertEq(stakingToken.balanceOf(user1), initialBalance + unstakeAmount);
         vm.stopPrank();
     }
 
-    function test_Withdraw_SuccessWhenRebalanceFails() public {
+    function test_unstake_SuccessWhenRebalanceFails() public {
         // Set up staking first
         nairaPetalStaking.setRewardYieldForYear(1e18);
         nairaPetalStaking.supplyRewards(2000e18);
@@ -477,22 +477,22 @@ contract NairaPetalStakingTest is Test {
         // Release rewards
         nairaPetalStaking.releaseRewards();
 
-        uint256 withdrawAmount = 50e18;
+        uint256 unstakeAmount = 50e18;
         uint256 initialBalance = stakingToken.balanceOf(user1);
 
         mockAggregator.setLatestRoundDataShouldRevert(true);
 
         vm.startPrank(user1);
         vm.expectEmit(true, true, false, true);
-        emit Withdrawn(user1, withdrawAmount);
+        emit Unstaked(user1, unstakeAmount);
 
-        nairaPetalStaking.withdraw(withdrawAmount);
+        nairaPetalStaking.unstake(unstakeAmount);
 
         vm.expectRevert("latestRoundData reverted");
         nairaPetalStaking.rebalance();
     }
 
-    function test_Withdraw_RevertWhen_InsufficientBalance() public {
+    function test_unstake_RevertWhen_InsufficientBalance() public {
         // Set up staking first
         nairaPetalStaking.setRewardYieldForYear(1e18);
         nairaPetalStaking.supplyRewards(2000e18);
@@ -510,7 +510,7 @@ contract NairaPetalStakingTest is Test {
 
         vm.startPrank(user1);
         vm.expectRevert(abi.encodeWithSelector(IERC20Errors.ERC20InsufficientBalance.selector, user1, 100e18, 200e18));
-        nairaPetalStaking.withdraw(200e18);
+        nairaPetalStaking.unstake(200e18);
         vm.stopPrank();
     }
 
@@ -746,7 +746,7 @@ contract NairaPetalStakingTest is Test {
     }
 
     function test_RecoverERC20_RevertWhen_StakingToken() public {
-        vm.expectRevert(abi.encodeWithSelector(CannotWithdrawStakingToken.selector, address(stakingToken)));
+        vm.expectRevert(abi.encodeWithSelector(CannotunstakeStakingToken.selector, address(stakingToken)));
         nairaPetalStaking.recoverERC20(address(stakingToken), 100e18);
     }
 
@@ -960,10 +960,10 @@ contract NairaPetalStakingTest is Test {
         vm.stopPrank();
     }
 
-    function testFuzz_Withdraw_ValidAmounts(uint96 stakeAmount, uint96 withdrawAmount) public {
+    function testFuzz_unstake_ValidAmounts(uint96 stakeAmount, uint96 unstakeAmount) public {
         // Bound to reasonable values
         stakeAmount = uint96(bound(stakeAmount, 1, 1000e18));
-        withdrawAmount = uint96(bound(withdrawAmount, 1, stakeAmount));
+        unstakeAmount = uint96(bound(unstakeAmount, 1, stakeAmount));
 
         // Setup rewards and staking
         nairaPetalStaking.setRewardYieldForYear(1e18);
@@ -982,9 +982,9 @@ contract NairaPetalStakingTest is Test {
         nairaPetalStaking.releaseRewards();
 
         vm.startPrank(user1);
-        nairaPetalStaking.withdraw(withdrawAmount);
+        nairaPetalStaking.unstake(unstakeAmount);
 
-        assertEq(nairaPetalStaking.balanceOf(user1), stakeAmount - withdrawAmount);
+        assertEq(nairaPetalStaking.balanceOf(user1), stakeAmount - unstakeAmount);
         vm.stopPrank();
     }
 
@@ -1183,7 +1183,7 @@ contract NairaPetalStakingTest is Test {
         assertEq(nairaPetalStaking.balanceOf(user2), 0);
     }
 
-    function test_WithdrawAndGetReward_WorkAfterWhitelistRemoval() public {
+    function test_unstakeAndGetReward_WorkAfterWhitelistRemoval() public {
         // Set up rewards and whitelist user
         nairaPetalStaking.setRewardYieldForYear(1e18);
         nairaPetalStaking.supplyRewards(1000e18);
@@ -1199,9 +1199,9 @@ contract NairaPetalStakingTest is Test {
         skip(3600);
         nairaPetalStaking.releaseRewards();
 
-        // User should be able to withdraw and get rewards while still whitelisted
+        // User should be able to unstake and get rewards while still whitelisted
         vm.startPrank(user1);
-        nairaPetalStaking.withdraw(50e18);
+        nairaPetalStaking.unstake(50e18);
         nairaPetalStaking.getReward();
         vm.stopPrank();
 
@@ -1209,7 +1209,7 @@ contract NairaPetalStakingTest is Test {
         assertGt(rewardsToken.balanceOf(user1), 0);
     }
 
-    function test_Withdraw_RevertWhen_NotWhitelisted() public {
+    function test_unstake_RevertWhen_NotWhitelisted() public {
         // Set up staking first (user needs to be whitelisted to stake)
         nairaPetalStaking.setRewardYieldForYear(1e18);
         nairaPetalStaking.supplyRewards(2000e18);
@@ -1224,10 +1224,10 @@ contract NairaPetalStakingTest is Test {
         nairaPetalStaking.removeFromWhitelist(user1);
         nairaPetalStaking.releaseRewards();
 
-        // User should not be able to withdraw after being removed from whitelist
+        // User should not be able to unstake after being removed from whitelist
         vm.startPrank(user1);
         vm.expectRevert(abi.encodeWithSelector(NotWhitelisted.selector, user1));
-        nairaPetalStaking.withdraw(50e18);
+        nairaPetalStaking.unstake(50e18);
         vm.stopPrank();
     }
 
@@ -1377,7 +1377,7 @@ contract NairaPetalStakingTest is Test {
         vm.stopPrank();
     }
 
-    function test_Withdraw_RevertWhen_Paused() public {
+    function test_unstake_RevertWhen_Paused() public {
         // Set up staking first
         nairaPetalStaking.setRewardYieldForYear(1e18);
         nairaPetalStaking.supplyRewards(2000e18);
@@ -1394,7 +1394,7 @@ contract NairaPetalStakingTest is Test {
 
         vm.startPrank(user1);
         vm.expectRevert(abi.encodeWithSelector(Pausable.EnforcedPause.selector));
-        nairaPetalStaking.withdraw(50e18);
+        nairaPetalStaking.unstake(50e18);
         vm.stopPrank();
     }
 
