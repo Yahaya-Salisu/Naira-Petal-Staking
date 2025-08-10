@@ -315,7 +315,7 @@ contract NairaPetalStakingTest is Test {
         nairaPetalStaking.addToWhitelist(user1);
 
         nairaPetalStaking.setRewardYieldForYear(1e18);
-        NairaPetalStaking.supplyRewards(1e18);
+        nairaPetalStaking.supplyRewards(1e18);
 
         vm.startPrank(user1);
         stakingToken.approve(address(nairaPetalStaking), 100e18);
@@ -351,7 +351,7 @@ contract NairaPetalStakingTest is Test {
         stakingToken.approve(address(nairaPetalStaking), 100e18);
         nairaPetalStaking.stake(100e18);
 
-        uint256 rewards = NairaPetalStaking.rewards(user1);
+        uint256 rewards = nairaPetalStaking.rewards(user1);
         assertGt(rewards, 0);
         vm.stopPrank();
     }
