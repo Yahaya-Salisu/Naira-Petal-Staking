@@ -6,10 +6,9 @@ The project is under active development
 ## Development
 
 ```bash
-foundryup
-forge install
 forge build
+
 forge test
 ```
 
-> Based on Synthetix NairaPetalStaking, modified by [Yahaya-Salisu](https://github.com/Yahaya-Salisu) for NairaPetalStaking.
+> Based on Synthetix fixed-stakin-rewards, modified by [Yahaya-Salisu](https://github.com/Yahaya-Salisu) for naira-petal-staking.
