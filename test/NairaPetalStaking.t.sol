@@ -2,7 +2,7 @@
 pragma solidity ^0.8.13;
 
 import {Test} from "forge-std/Test.sol";
-import {FixedStakingRewards} from "../src/FixedStakingRewards.sol";
+import {NairaPetalStaking} from "../src/NairaPetalStaking.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC20, IERC20Errors} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IChainlinkAggregator} from "../src/interfaces/IChainlinkAggregator.sol";
@@ -17,7 +17,7 @@ import {
     CannotWithdrawStakingToken,
     InvalidPriceFeed,
     NotWhitelisted
-} from "../src/FixedStakingRewards.sol";
+} from "../src/NairaPetalStaking.sol";
 
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 
@@ -123,8 +123,8 @@ contract MockERC20 is ERC20 {
     }
 }
 
-contract FixedStakingRewardsTest is Test {
-    FixedStakingRewards public stakingRewards;
+contract NairaPetalStakingTest is Test {
+    NairaPetalStaking public stakingRewards;
     MockERC20 public rewardsToken;
     MockERC20 public stakingToken;
     MockERC20 public otherToken;
@@ -170,7 +170,7 @@ contract FixedStakingRewardsTest is Test {
 
         // Deploy staking contract
         stakingRewards =
-            new FixedStakingRewards(owner, address(rewardsToken), address(stakingToken), address(mockAggregator));
+            new NairaPetalStaking(owner, address(rewardsToken), address(stakingToken), address(mockAggregator));
 
         // setup token allowances so we dont have to do it later
         stakingToken.approve(address(stakingRewards), type(uint256).max);
@@ -190,7 +190,7 @@ contract FixedStakingRewardsTest is Test {
         assertEq(address(stakingRewards.stakingToken()), address(stakingToken));
         assertEq(stakingRewards.owner(), owner);
         assertEq(stakingRewards.rewardRate(), 0);
-        assertEq(stakingRewards.name(), "FixedStakingRewards");
+        assertEq(stakingRewards.name(), "NairaPetalStaking");
         assertEq(stakingRewards.symbol(), "FSR");
 
         // Check rewardsAvailableDate is set to 1 year from deployment
@@ -199,8 +199,8 @@ contract FixedStakingRewardsTest is Test {
 
     function test_Constructor_WithDifferentOwner() public {
         address newOwner = makeAddr("newOwner");
-        FixedStakingRewards newStaking =
-            new FixedStakingRewards(newOwner, address(rewardsToken), address(stakingToken), address(mockAggregator));
+        NairaPetalStaking newStaking =
+            new NairaPetalStaking(newOwner, address(rewardsToken), address(stakingToken), address(mockAggregator));
 
         assertEq(newStaking.owner(), newOwner);
     }

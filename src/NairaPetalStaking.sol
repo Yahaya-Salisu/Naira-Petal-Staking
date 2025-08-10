@@ -20,7 +20,7 @@ error CannotWithdrawStakingToken(address attemptedToken);
 error InvalidPriceFeed(uint256 updateTime, int256 currentRewardTokenRate);
 error NotWhitelisted(address account);
 
-contract FixedStakingRewards is IStakingRewards, ERC20Pausable, ReentrancyGuard, Ownable {
+contract NairaPetalStaking is IStakingRewards, ERC20Pausable, ReentrancyGuard, Ownable {
     using SafeERC20 for IERC20;
 
     /* ========== STATE VARIABLES ========== */
@@ -42,7 +42,7 @@ contract FixedStakingRewards is IStakingRewards, ERC20Pausable, ReentrancyGuard,
     /* ========== CONSTRUCTOR ========== */
 
     constructor(address _owner, address _rewardsToken, address _stakingToken, address _rewardsTokenRateAggregator)
-        ERC20("FixedStakingRewards", "FSR")
+        ERC20("NairaPetalStaking", "NPS")
         Ownable(_owner)
     {
         rewardsToken = IERC20(_rewardsToken);
@@ -110,7 +110,7 @@ contract FixedStakingRewards is IStakingRewards, ERC20Pausable, ReentrancyGuard,
         }
         if (amount == 0) revert CannotWithdrawZero();
 
-        try FixedStakingRewards(address(this)).rebalance() {} catch {}
+        try NairaPetalStaking(address(this)).rebalance() {} catch {}
 
         _burn(msg.sender, amount);
         stakingToken.safeTransfer(msg.sender, amount);
