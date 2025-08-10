@@ -188,13 +188,13 @@ contract NairaPetalStakingTest is Test {
     function test_Constructor_InitializesCorrectly() public view {
         assertEq(address(nairaPetalStaking.rewardsToken()), address(rewardsToken));
         assertEq(address(nairaPetalStaking.stakingToken()), address(stakingToken));
-        assertEq(NairaPetalStaking.owner(), owner);
-        assertEq(NairaPetalStaking.rewardRate(), 0);
-        assertEq(NairaPetalStaking.name(), "NairaPetalStaking");
-        assertEq(NairaPetalStaking.symbol(), "NPS");
+        assertEq(nairaPetalStaking.owner(), owner);
+        assertEq(nairaPetalStaking.rewardRate(), 0);
+        assertEq(nairaPetalStaking.name(), "NairaPetalStaking");
+        assertEq(nairaPetalStaking.symbol(), "NPS");
 
         // Check rewardsAvailableDate is set to 1 year from deployment
-        assertEq(NairaPetalStaking.rewardsAvailableDate(), block.timestamp + 86400 * 365);
+        assertEq(nairaPetalStaking.rewardsAvailableDate(), block.timestamp + 86400 * 365);
     }
 
     function test_Constructor_WithDifferentOwner() public {
