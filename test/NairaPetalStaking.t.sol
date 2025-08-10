@@ -953,7 +953,7 @@ contract NairaPetalStakingTest is Test {
         nairaPetalStaking.addToWhitelist(user1);
 
         vm.startPrank(user1);
-        stakingToken.approve(address(NairaPetalStaking), amount);
+        stakingToken.approve(address(nairaPetalStaking), amount);
         nairaPetalStaking.stake(amount);
 
         assertEq(nairaPetalStaking.balanceOf(user1), amount);
@@ -974,7 +974,7 @@ contract NairaPetalStakingTest is Test {
         nairaPetalStaking.addToWhitelist(user1);
 
         vm.startPrank(user1);
-        stakingToken.approve(address(NairaPetalStaking), stakeAmount);
+        stakingToken.approve(address(nairaPetalStaking), stakeAmount);
         nairaPetalStaking.stake(stakeAmount);
         vm.stopPrank();
 
@@ -1005,7 +1005,7 @@ contract NairaPetalStakingTest is Test {
         // 1. Set up rewards
         nairaPetalStaking.setRewardYieldForYear(1e18);
         nairaPetalStaking.supplyRewards(1000e18);
-        rewardsToken.transfer(address(NairaPetalStaking), 5000e18);
+        rewardsToken.transfer(address(nairaPetalStaking), 5000e18);
 
         // 2. Add user to whitelist
         nairaPetalStaking.addToWhitelist(user1);
@@ -1310,7 +1310,7 @@ contract NairaPetalStakingTest is Test {
         nairaPetalStaking.stake(100e18);
         vm.stopPrank();
 
-        assertEq(NairaPetalStaking.balanceOf(user1), 200e18);
+        assertEq(nairaPetalStaking.balanceOf(user1), 200e18);
     }
 
     /*//////////////////////////////////////////////////////////////
