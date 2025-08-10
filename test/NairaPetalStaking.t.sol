@@ -169,12 +169,12 @@ contract NairaPetalStakingTest is Test {
         mockAggregator.setLatestAnswer(1e8 / 2, block.timestamp);
 
         // Deploy staking contract
-        NairaPetalStaking =
+        nairaPetalStaking =
             new NairaPetalStaking(owner, address(rewardsToken), address(stakingToken), address(mockAggregator));
 
         // setup token allowances so we dont have to do it later
-        stakingToken.approve(address(NairaPetalStaking), type(uint256).max);
-        rewardsToken.approve(address(NairaPetalStaking), type(uint256).max);
+        stakingToken.approve(address(nairaPetalStaking), type(uint256).max);
+        rewardsToken.approve(address(nairaPetalStaking), type(uint256).max);
 
         // Setup initial token distributions
         stakingToken.transfer(user1, 1000e18);
@@ -186,8 +186,8 @@ contract NairaPetalStakingTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_Constructor_InitializesCorrectly() public view {
-        assertEq(address(NairaPetalStaking.rewardsToken()), address(rewardsToken));
-        assertEq(address(NairaPetalStaking.stakingToken()), address(stakingToken));
+        assertEq(address(nairaPetalStaking.rewardsToken()), address(rewardsToken));
+        assertEq(address(nairaPetalStaking.stakingToken()), address(stakingToken));
         assertEq(NairaPetalStaking.owner(), owner);
         assertEq(NairaPetalStaking.rewardRate(), 0);
         assertEq(NairaPetalStaking.name(), "NairaPetalStaking");
