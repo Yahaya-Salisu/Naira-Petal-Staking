@@ -124,7 +124,7 @@ contract MockERC20 is ERC20 {
 }
 
 contract NairaPetalStakingTest is Test {
-    NairaPetalStaking public NairaPetalStaking;
+    NairaPetalStaking public nairaPetalStaking;
     MockERC20 public rewardsToken;
     MockERC20 public stakingToken;
     MockERC20 public otherToken;
