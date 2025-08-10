@@ -7,7 +7,7 @@ import "openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
 import "openzeppelin-contracts/contracts/access/Ownable.sol";
 
 // Inheritance
-import "./interfaces/IStakingRewards.sol";
+import "./interfaces/INairaPetalStaking.sol";
 import "./interfaces/IChainlinkAggregator.sol";
 
 /* ========== CUSTOM ERRORS ========== */
@@ -20,7 +20,7 @@ error CannotWithdrawStakingToken(address attemptedToken);
 error InvalidPriceFeed(uint256 updateTime, int256 currentRewardTokenRate);
 error NotWhitelisted(address account);
 
-contract NairaPetalStaking is IStakingRewards, ERC20Pausable, ReentrancyGuard, Ownable {
+contract NairaPetalStaking is INairaPetalStaking, ERC20Pausable, ReentrancyGuard, Ownable {
     using SafeERC20 for IERC20;
 
     /* ========== STATE VARIABLES ========== */

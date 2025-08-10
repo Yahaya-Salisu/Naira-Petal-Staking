@@ -12,4 +12,4 @@ forge build
 forge test
 ```
 
-> Based on Synthetix StakingRewards, modified by [Yahaya-Salisu](https://github.com/Yahaya-Salisu) for NairaPetalStaking.
+> Based on Synthetix NairaPetalStaking, modified by [Yahaya-Salisu](https://github.com/Yahaya-Salisu) for NairaPetalStaking.
