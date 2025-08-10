@@ -387,7 +387,7 @@ contract NairaPetalStakingTest is Test {
         skip(3600);
 
         // Both user1 and user2 should be able to receive their corresponding rewards
-        user1Rewards = NairaPetalStaking.earned(user1);
+        user1Rewards = nairaPetalStaking.earned(user1);
         uint256 user2Rewards = nairaPetalStaking.earned(user2);
         assertApproxEqAbs(user1Rewards, rewardsPerHour + rewardsPerHour / 2, 1000000, "second hour rewards user1");
         // half of the rewards because user2 only has half the shares for half of the time
@@ -733,7 +733,7 @@ contract NairaPetalStakingTest is Test {
 
     function test_RecoverERC20_Success() public {
         uint256 amount = 100e18;
-        otherToken.transfer(address(NairaPetalStaking), amount);
+        otherToken.transfer(address(nairaPetalStaking), amount);
 
         uint256 initialBalance = otherToken.balanceOf(owner);
 
@@ -766,7 +766,7 @@ contract NairaPetalStakingTest is Test {
         nairaPetalStaking.addToWhitelist(user1);
 
         vm.startPrank(user1);
-        stakingToken.approve(address(NairaPetalStaking), 100e18);
+        stakingToken.approve(address(nairaPetalStaking), 100e18);
         nairaPetalStaking.stake(100e18);
         vm.stopPrank();
 
@@ -857,7 +857,7 @@ contract NairaPetalStakingTest is Test {
 
         // Rebalance should result in 0 reward rate
         nairaPetalStaking.rebalance();
-        assertEq(NairaPetalStaking.rewardRate(), 0);
+        assertEq(nairaPetalStaking.rewardRate(), 0);
     }
 
     function test_Rebalance_RevertWhen_PriceFeedReturnsZero() public {
