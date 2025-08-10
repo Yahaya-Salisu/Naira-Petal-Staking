@@ -1434,7 +1434,7 @@ contract NairaPetalStakingTest is Test {
         vm.stopPrank();
 
         // Release rewards and pause
-        NairaPetalStaking.releaseRewards();
+        nairaPetalStaking.releaseRewards();
         nairaPetalStaking.pause();
 
         vm.startPrank(user1);
