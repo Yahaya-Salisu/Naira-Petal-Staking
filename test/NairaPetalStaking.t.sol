@@ -478,7 +478,6 @@ contract NairaPetalStakingTest is Test {
         nairaPetalStaking.releaseRewards();
 
         uint256 unstakeAmount = 50e18;
-        uint256 initialBalance = stakingToken.balanceOf(user1);
 
         mockAggregator.setLatestRoundDataShouldRevert(true);
 
