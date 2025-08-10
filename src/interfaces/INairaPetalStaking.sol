@@ -3,7 +3,6 @@ pragma solidity ^0.8.29;
 
 import "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 
-// https://docs.synthetix.io/contracts/source/interfaces/iNairaPetalStaking
 interface INairaPetalStaking {
     // Views
 
