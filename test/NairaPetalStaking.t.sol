@@ -210,62 +210,62 @@ contract NairaPetalStakingTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_RewardPerToken_WithZeroTotalSupply() public view {
-        uint256 result = NairaPetalStaking.rewardPerToken();
+        uint256 result = nairaPetalStaking.rewardPerToken();
         assertEq(result, 0);
     }
 
     function test_RewardPerToken_WithNonZeroTotalSupply() public {
         // Set up rewards
-        NairaPetalStaking.setRewardYieldForYear(1e18);
-        NairaPetalStaking.supplyRewards(1000e18);
+        nairaPetalStaking.setRewardYieldForYear(1e18);
+        nairaPetalStaking.supplyRewards(1000e18);
 
         // Add user to whitelist
-        NairaPetalStaking.addToWhitelist(user1);
+        nairaPetalStaking.addToWhitelist(user1);
 
         // User stakes
         vm.startPrank(user1);
-        stakingToken.approve(address(NairaPetalStaking), 100e18);
-        NairaPetalStaking.stake(100e18);
+        stakingToken.approve(address(nairaPetalStaking), 100e18);
+        nairaPetalStaking.stake(100e18);
         vm.stopPrank();
 
         // Move time forward
         skip(3600); // 1 hour
 
-        uint256 result = NairaPetalStaking.rewardPerToken();
+        uint256 result = nairaPetalStaking.rewardPerToken();
         uint256 expected = 100 * 3600 * (1e18 * 2 / uint256(365 days)) * 1e18 / 100e18; // timeElapsed * rewardRate * 1e18 / totalSupply
         assertEq(result, expected);
     }
 
     function test_Earned_WithoutStaking() public view {
-        uint256 result = NairaPetalStaking.earned(user1);
+        uint256 result = nairaPetalStaking.earned(user1);
         assertEq(result, 0);
     }
 
     function test_Earned_WithStaking() public {
         // Set up rewards
-        NairaPetalStaking.setRewardYieldForYear(1e18);
-        NairaPetalStaking.supplyRewards(1000e18);
+        nairaPetalStaking.setRewardYieldForYear(1e18);
+        nairaPetalStaking.supplyRewards(1000e18);
 
         // Add user to whitelist
-        NairaPetalStaking.addToWhitelist(user1);
+        nairaPetalStaking.addToWhitelist(user1);
 
         // User stakes
         vm.startPrank(user1);
-        stakingToken.approve(address(NairaPetalStaking), 100e18);
-        NairaPetalStaking.stake(100e18);
+        stakingToken.approve(address(nairaPetalStaking), 100e18);
+        nairaPetalStaking.stake(100e18);
         vm.stopPrank();
 
         // Move time forward
         skip(3600); // 1 hour
 
-        uint256 result = NairaPetalStaking.earned(user1);
+        uint256 result = nairaPetalStaking.earned(user1);
         uint256 expected = 100 * 3600 * (1e18 * 2 / uint256(365 days)); // 100 tokens * 1 hour * 1 token per second / 0.5 token rate
         assertEq(result, expected);
     }
 
     function test_GetRewardForDuration_ReturnsCorrectValue() public {
-        NairaPetalStaking.setRewardYieldForYear(1e18);
-        uint256 result = NairaPetalStaking.getRewardForDuration();
+        nairaPetalStaking.setRewardYieldForYear(1e18);
+        uint256 result = nairaPetalStaking.getRewardForDuration();
         uint256 expected = (1e18 * 2 / uint256(365 days)) * (86400 * 14); // Should use rewardsDuration instead
         assertEq(result, expected);
     }
@@ -278,23 +278,23 @@ contract NairaPetalStakingTest is Test {
         uint256 amount = 100e18;
 
         // Set up rewards so staking is allowed
-        NairaPetalStaking.setRewardYieldForYear(1e18);
-        NairaPetalStaking.supplyRewards(1000e18);
+        nairaPetalStaking.setRewardYieldForYear(1e18);
+        nairaPetalStaking.supplyRewards(1000e18);
 
         // Add user to whitelist
-        NairaPetalStaking.addToWhitelist(user1);
+        nairaPetalStaking.addToWhitelist(user1);
 
         vm.startPrank(user1);
-        stakingToken.approve(address(NairaPetalStaking), amount);
+        stakingToken.approve(address(nairaPetalStaking), amount);
 
         vm.expectEmit(true, true, false, true);
         emit Staked(user1, amount);
 
-        NairaPetalStaking.stake(amount);
+        nairaPetalStaking.stake(amount);
 
-        assertEq(NairaPetalStaking.balanceOf(user1), amount);
-        assertEq(NairaPetalStaking.totalSupply(), amount);
-        assertEq(stakingToken.balanceOf(address(NairaPetalStaking)), amount);
+        assertEq(nairaPetalStaking.balanceOf(user1), amount);
+        assertEq(nairaPetalStaking.totalSupply(), amount);
+        assertEq(stakingToken.balanceOf(address(nairaPetalStaking)), amount);
         vm.stopPrank();
     }
 
